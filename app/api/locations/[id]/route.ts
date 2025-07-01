@@ -4,9 +4,10 @@ import { updateLocation, deleteLocation } from '@/lib/db';
 // PUT - Update location
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const params = await context.params;
     const id = parseInt(params.id);
     
     if (isNaN(id)) {
@@ -116,9 +117,10 @@ export async function PUT(
 // DELETE - Delete location
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const params = await context.params;
     const id = parseInt(params.id);
     
     if (isNaN(id)) {
