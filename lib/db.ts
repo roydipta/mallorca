@@ -60,7 +60,13 @@ export async function getAllLocations(): Promise<Location[]> {
         END,
         id
     `;
-    return rows as Location[];
+    
+    // Ensure coordinates are numbers, not strings
+    return rows.map(row => ({
+      ...row,
+      lat: parseFloat(row.lat),
+      lng: parseFloat(row.lng)
+    })) as Location[];
   } catch (error) {
     console.error('Error fetching locations:', error);
     throw error;
@@ -74,7 +80,13 @@ export async function createLocation(location: Omit<Location, 'id' | 'created_at
       VALUES (${location.name}, ${location.lat}, ${location.lng}, ${location.day}, ${location.time}, ${location.description})
       RETURNING *
     `;
-    return rows[0] as Location;
+    
+    const row = rows[0];
+    return {
+      ...row,
+      lat: parseFloat(row.lat),
+      lng: parseFloat(row.lng)
+    } as Location;
   } catch (error) {
     console.error('Error creating location:', error);
     throw error;
@@ -123,7 +135,12 @@ export async function updateLocation(id: number, location: Partial<Omit<Location
     `;
 
     const { rows } = await sql.query(query, values);
-    return rows[0] as Location;
+    const row = rows[0];
+    return {
+      ...row,
+      lat: parseFloat(row.lat),
+      lng: parseFloat(row.lng)
+    } as Location;
   } catch (error) {
     console.error('Error updating location:', error);
     throw error;
