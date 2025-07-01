@@ -34,23 +34,25 @@ export async function PUT(
     }
 
     if (lat !== undefined) {
-      if (typeof lat !== 'number' || lat < -90 || lat > 90) {
+      const latNum = parseFloat(lat);
+      if (isNaN(latNum) || latNum < -90 || latNum > 90) {
         return NextResponse.json(
-          { success: false, error: 'Latitude must be a number between -90 and 90' },
+          { success: false, error: 'Latitude must be a valid number between -90 and 90' },
           { status: 400 }
         );
       }
-      updates.lat = lat;
+      updates.lat = latNum;
     }
 
     if (lng !== undefined) {
-      if (typeof lng !== 'number' || lng < -180 || lng > 180) {
+      const lngNum = parseFloat(lng);
+      if (isNaN(lngNum) || lngNum < -180 || lngNum > 180) {
         return NextResponse.json(
-          { success: false, error: 'Longitude must be a number between -180 and 180' },
+          { success: false, error: 'Longitude must be a valid number between -180 and 180' },
           { status: 400 }
         );
       }
-      updates.lng = lng;
+      updates.lng = lngNum;
     }
 
     if (day !== undefined) {

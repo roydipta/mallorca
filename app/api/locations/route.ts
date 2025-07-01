@@ -46,14 +46,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate coordinates
-    if (typeof lat !== 'number' || typeof lng !== 'number') {
+    const latNum = parseFloat(lat);
+    const lngNum = parseFloat(lng);
+    
+    if (isNaN(latNum) || isNaN(lngNum)) {
       return NextResponse.json(
-        { success: false, error: 'Coordinates must be numbers' },
+        { success: false, error: 'Coordinates must be valid numbers' },
         { status: 400 }
       );
     }
 
-    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    if (latNum < -90 || latNum > 90 || lngNum < -180 || lngNum > 180) {
       return NextResponse.json(
         { success: false, error: 'Invalid coordinate values' },
         { status: 400 }
@@ -62,8 +65,8 @@ export async function POST(request: NextRequest) {
 
     const newLocation = await createLocation({
       name: name.trim(),
-      lat: parseFloat(lat),
-      lng: parseFloat(lng),
+      lat: latNum,
+      lng: lngNum,
       day,
       time: time.trim(),
       description: description.trim()
