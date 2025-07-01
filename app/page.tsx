@@ -29,6 +29,8 @@ interface Location {
   day: string;
   time: string;
   description: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export default function Home() {

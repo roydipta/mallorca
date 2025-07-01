@@ -10,6 +10,8 @@ interface Location {
   day: string;
   time: string;
   description: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 interface EditLocationModalProps {
@@ -465,4 +467,5 @@ export default function EditLocationModal({ isOpen, location, onClose, onLocatio
         }
       `}</style>
     </div>
-  )};
+  );
+}
