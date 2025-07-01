@@ -272,18 +272,61 @@ export default function Home() {
       let infoWindow: any;
       let placesService: any;
       let placesCache: { [key: string]: any } = {};
+      let cacheStatus = { loaded: 0, total: locations.length, loading: false };
+
+      function updateCacheStatus() {
+        const cacheCount = document.getElementById('cacheCount');
+        const loadBtn = document.getElementById('loadPlacesBtn') as HTMLButtonElement;
+        const status = document.getElementById('cacheStatus');
+        
+        if (cacheCount) cacheCount.textContent = String(cacheStatus.loaded);
+        
+        if (loadBtn) {
+          if (cacheStatus.loading) {
+            loadBtn.textContent = '⏳ Loading...';
+            loadBtn.disabled = true;
+          } else if (cacheStatus.loaded === cacheStatus.total) {
+            loadBtn.textContent = '✅ All Loaded';
+            loadBtn.disabled = true;
+          } else {
+            loadBtn.textContent = '📍 Load Place Data';
+            loadBtn.disabled = false;
+          }
+        }
+        
+        if (status) {
+          status.style.color = cacheStatus.loaded === cacheStatus.total ? '#2ecc71' : '#95a5a6';
+        }
+      }
+
+      function getCacheKey(location: any): string {
+        return `${location.name}-${location.coords.lat}-${location.coords.lng}`;
+      }
 
       function searchPlace(location: any, index: number, callback: (result: any) => void) {
-        const cacheKey = `${location.name}-${location.coords.lat}-${location.coords.lng}`;
+        const cacheKey = getCacheKey(location);
         if (placesCache[cacheKey]) {
           callback(placesCache[cacheKey]);
           return;
         }
+        
+        // If not cached, show basic info and offer to load
+        callback(null);
+      }
+
+      function loadPlaceData(location: any, index: number, callback: (result: any) => void) {
+        const cacheKey = getCacheKey(location);
+        if (placesCache[cacheKey]) {
+          callback(placesCache[cacheKey]);
+          return;
+        }
+
         const request = {
           location: location.coords,
           radius: 1000,
           query: location.name
         };
+        
         placesService.textSearch(request, (results: any, status: any) => {
           if (status === (window as any).google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
             const place = results[0];
@@ -297,6 +340,8 @@ export default function Home() {
             placesService.getDetails(detailRequest, (placeDetails: any, detailStatus: any) => {
               if (detailStatus === (window as any).google.maps.places.PlacesServiceStatus.OK) {
                 placesCache[cacheKey] = placeDetails;
+                cacheStatus.loaded++;
+                updateCacheStatus();
                 callback(placeDetails);
               } else {
                 callback(null);
@@ -305,6 +350,39 @@ export default function Home() {
           } else {
             callback(null);
           }
+        });
+      }
+
+      function loadAllPlacesData() {
+        if (cacheStatus.loading) return;
+        
+        cacheStatus.loading = true;
+        updateCacheStatus();
+        
+        let completedRequests = 0;
+        const totalRequests = locations.length;
+        
+        locations.forEach((location, index) => {
+          const cacheKey = getCacheKey(location);
+          if (placesCache[cacheKey]) {
+            completedRequests++;
+            if (completedRequests === totalRequests) {
+              cacheStatus.loading = false;
+              updateCacheStatus();
+            }
+            return;
+          }
+          
+          // Add delay between requests to avoid rate limiting
+          setTimeout(() => {
+            loadPlaceData(location, index, (result) => {
+              completedRequests++;
+              if (completedRequests === totalRequests) {
+                cacheStatus.loading = false;
+                updateCacheStatus();
+              }
+            });
+          }, index * 200); // 200ms delay between requests
         });
       }
 
@@ -326,16 +404,25 @@ export default function Home() {
             <div class="info-time">${location.time}</div>
             <div class="info-description">${location.description}</div>
         `;
-        if (placeDetails && placeDetails.photos && placeDetails.photos.length > 0) {
-          content += '<div class="info-photos">';
-          const maxPhotos = Math.min(4, placeDetails.photos.length);
-          for (let i = 0; i < maxPhotos; i++) {
-            const photoUrl = placeDetails.photos[i].getUrl({maxWidth: 120, maxHeight: 90});
-            content += `<img src="${photoUrl}" class="info-photo" onclick="window.open('${photoUrl}', '_blank')">`;
+        
+        if (!placeDetails) {
+          content += `
+            <div class="no-cache-notice">
+              <p>📍 <strong>Place data not loaded yet</strong></p>
+              <p style="font-size: 12px; color: #666; margin: 5px 0;">Click "Load Place Data" button to get photos, reviews, and details for all locations.</p>
+            </div>
+          `;
+        } else {
+          if (placeDetails.photos && placeDetails.photos.length > 0) {
+            content += '<div class="info-photos">';
+            const maxPhotos = Math.min(4, placeDetails.photos.length);
+            for (let i = 0; i < maxPhotos; i++) {
+              const photoUrl = placeDetails.photos[i].getUrl({maxWidth: 120, maxHeight: 90});
+              content += `<img src="${photoUrl}" class="info-photo" onclick="window.open('${photoUrl}', '_blank')">`;
+            }
+            content += '</div>';
           }
-          content += '</div>';
-        }
-        if (placeDetails) {
+          
           content += '<div class="info-details">';
           if (placeDetails.formatted_phone_number) {
             content += `<div class="info-detail">📞 ${placeDetails.formatted_phone_number}</div>`;
@@ -353,6 +440,7 @@ export default function Home() {
             content += `<div class="info-detail">🏷️ ${mainType}</div>`;
           }
           content += '</div>';
+          
           if (placeDetails.reviews && placeDetails.reviews.length > 0) {
             content += '<div class="info-reviews">';
             const maxReviews = Math.min(2, placeDetails.reviews.length);
@@ -369,6 +457,7 @@ export default function Home() {
             }
             content += '</div>';
           }
+          
           content += '<div class="info-actions">';
           if (placeDetails.website) {
             content += `<a href="${placeDetails.website}" target="_blank" class="info-btn">🌐 Website</a>`;
@@ -376,8 +465,12 @@ export default function Home() {
           if (placeDetails.url) {
             content += `<a href="${placeDetails.url}" target="_blank" class="info-btn">📍 Google Maps</a>`;
           }
-          const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${location.coords.lat},${location.coords.lng}`;
-          content += `<a href="${directionsUrl}" target="_blank" class="info-btn primary">🧭 Directions</a>`;
+        }
+        
+        const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${location.coords.lat},${location.coords.lng}`;
+        content += `<a href="${directionsUrl}" target="_blank" class="info-btn primary">🧭 Directions</a>`;
+        
+        if (placeDetails) {
           content += '</div>';
         }
         content += '</div>';
@@ -574,26 +667,23 @@ export default function Home() {
           }
         });
         marker.addListener('click', () => {
-          const loadingContent = `
-            <div class="enhanced-info-window">
-              <div class="info-header">
-                <div class="info-title">${location.name}</div>
-              </div>
-              <div class="info-time">${location.time}</div>
-              <div class="info-description">${location.description}</div>
-              <div style="text-align: center; padding: 20px;">
-                <div class="loading-spinner"></div>
-                <div style="margin-top: 10px; color: #666;">Loading Google data...</div>
-              </div>
-            </div>
-          `;
-          infoWindow.setContent(loadingContent);
-          infoWindow.open(map, marker);
           highlightLocation(index);
-          searchPlace(location, index, (placeDetails: any) => {
-            const enhancedContent = createEnhancedInfoContent(location, placeDetails);
+          
+          // Always show basic content immediately
+          const basicContent = createEnhancedInfoContent(location, null);
+          infoWindow.setContent(basicContent);
+          infoWindow.open(map, marker);
+          
+          // Check if we have cached data
+          const cacheKey = getCacheKey(location);
+          if (placesCache[cacheKey]) {
+            const enhancedContent = createEnhancedInfoContent(location, placesCache[cacheKey]);
             infoWindow.setContent(enhancedContent);
-          });
+          } else {
+            // Show basic info with notice about loading place data
+            const basicContent = createEnhancedInfoContent(location, null);
+            infoWindow.setContent(basicContent);
+          }
         });
         markers[index] = marker;
       });
@@ -620,6 +710,7 @@ export default function Home() {
 
       fitAllMarkers();
       populateLocationsList();
+      updateCacheStatus();
 
       // Attach functions for use in onClick/onInput
       (window as any).filterByDay = filterByDay;
@@ -628,6 +719,7 @@ export default function Home() {
       (window as any).toggleMapType = toggleMapType;
       (window as any).fitAllMarkers = fitAllMarkers;
       (window as any).toggleTraffic = toggleTraffic;
+      (window as any).loadAllPlacesData = loadAllPlacesData;
     }
 
     loadGoogleMapsScript(main);
@@ -637,6 +729,58 @@ export default function Home() {
 
   return (
     <>
+      <style jsx>{`
+        .cache-controls {
+          margin: 10px 0;
+          padding: 10px;
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 8px;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .cache-btn {
+          width: 100%;
+          padding: 8px 12px;
+          background: #3498db;
+          color: white;
+          border: none;
+          border-radius: 6px;
+          cursor: pointer;
+          font-weight: 500;
+          transition: all 0.2s;
+          margin-bottom: 8px;
+        }
+        
+        .cache-btn:hover:not(:disabled) {
+          background: #2980b9;
+          transform: translateY(-1px);
+        }
+        
+        .cache-btn:disabled {
+          background: #95a5a6;
+          cursor: not-allowed;
+          transform: none;
+        }
+        
+        .cache-status {
+          text-align: center;
+          font-size: 12px;
+          color: #95a5a6;
+        }
+        
+        .no-cache-notice {
+          background: #f8f9fa;
+          border: 1px dashed #ddd;
+          border-radius: 6px;
+          padding: 10px;
+          margin: 10px 0;
+          text-align: center;
+        }
+        
+        .no-cache-notice p {
+          margin: 3px 0;
+        }
+      `}</style>
       <button className="mobile-toggle" onClick={() => (window as any).toggleSidebar()}>☰</button>
       <div className="container">
         <div className="sidebar" id="sidebar">
@@ -667,6 +811,14 @@ export default function Home() {
               id="searchBox"
               onInput={() => (window as any).searchLocations()}
             />
+          </div>
+          <div className="cache-controls">
+            <button className="cache-btn" id="loadPlacesBtn" onClick={() => (window as any).loadAllPlacesData()}>
+              📍 Load Place Data
+            </button>
+            <div className="cache-status" id="cacheStatus">
+              <span id="cacheCount">0</span>/26 places cached
+            </div>
           </div>
           <div className="day-filters">
             <button className="day-btn all active" onClick={() => (window as any).filterByDay('all')}>
