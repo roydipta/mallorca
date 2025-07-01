@@ -1,15 +1,107 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import { dayColors, dayNames, locations, type Location } from './mallorcaData';
+import { useEffect, useRef, useState } from 'react';
+import AddLocationForm from './components/AddLocationForm';
+import EditLocationModal from './components/EditLocationModal';
+
+// Constants from the original data
+const dayColors: Record<string, string> = {
+  day1: '#e74c3c',
+  day2: '#f39c12',
+  day3: '#2ecc71',
+  day4: '#3498db',
+  day5: '#9b59b6'
+};
+
+const dayNames: Record<string, string> = {
+  day1: 'North Coast',
+  day2: 'UNESCO Villages',
+  day3: 'Wine Country',
+  day4: 'Southeast Paradise',
+  day5: 'West Coast Finale'
+};
+
+interface Location {
+  id?: number;
+  name: string;
+  lat: number;
+  lng: number;
+  day: string;
+  time: string;
+  description: string;
+}
 
 export default function Home() {
   const mapRef = useRef<HTMLDivElement>(null);
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingLocation, setEditingLocation] = useState<Location | null>(null);
+  const [error, setError] = useState('');
 
+  // Fetch locations from API
+  const fetchLocations = async () => {
+    try {
+      setIsLoading(true);
+      const response = await fetch('/api/locations');
+      const result = await response.json();
+      
+      if (result.success) {
+        setLocations(result.data);
+        setError('');
+      } else {
+        setError('Failed to load locations');
+      }
+    } catch (error) {
+      console.error('Error fetching locations:', error);
+      setError('Network error loading locations');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Edit location
+  const editLocation = (location: Location) => {
+    setEditingLocation(location);
+    setShowEditModal(true);
+  };
+
+  // Delete location
+  const deleteLocation = async (id: number) => {
+    if (!confirm('Are you sure you want to delete this location?')) return;
+
+    try {
+      const response = await fetch(`/api/locations/${id}`, {
+        method: 'DELETE',
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        await fetchLocations(); // Refresh the list
+        // Reinitialize the map with new data
+        if ((window as any).google && (window as any).google.maps) {
+          initializeMap();
+        }
+      } else {
+        alert('Failed to delete location');
+      }
+    } catch (error) {
+      console.error('Error deleting location:', error);
+      alert('Network error deleting location');
+    }
+  };
+
+  // Load locations on component mount
   useEffect(() => {
+    fetchLocations();
+  }, []);
+
+  const initializeMap = () => {
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
     if (!apiKey) {
-      alert('Google Maps API key is missing.');
+      setError('Google Maps API key is missing.');
       return;
     }
 
@@ -22,7 +114,6 @@ export default function Home() {
       }
       const scriptId = 'google-maps-script';
       if (document.getElementById(scriptId)) {
-        // Script is loading
         (window as any).initMap = cb;
         return;
       }
@@ -35,11 +126,8 @@ export default function Home() {
       document.body.appendChild(script);
     }
 
-    // ---- MAIN FUNCTION ----
     function main() {
-      // ========================
-      // All constants and helpers
-      // ========================
+      if (locations.length === 0) return;
 
       function createMarkerIcon(color: string, isHighlighted = false) {
         const size = isHighlighted ? 30 : 25;
@@ -52,7 +140,6 @@ export default function Home() {
         return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
       }
 
-      // ==== ALL THE JS LOGIC IS DIRECT COPY BELOW ====
       let map: any;
       let markers: any = {};
       let routeLines: any = {};
@@ -65,118 +152,6 @@ export default function Home() {
       let placesService: any;
       let placesCache: { [key: string]: any } = {};
       let cacheStatus = { loaded: 0, total: locations.length, loading: false };
-
-      function updateCacheStatus() {
-        const cacheCount = document.getElementById('cacheCount');
-        const loadBtn = document.getElementById('loadPlacesBtn') as HTMLButtonElement;
-        const status = document.getElementById('cacheStatus');
-        
-        if (cacheCount) cacheCount.textContent = String(cacheStatus.loaded);
-        
-        if (loadBtn) {
-          if (cacheStatus.loading) {
-            loadBtn.textContent = '⏳ Loading...';
-            loadBtn.disabled = true;
-          } else if (cacheStatus.loaded === cacheStatus.total) {
-            loadBtn.textContent = '✅ All Loaded';
-            loadBtn.disabled = true;
-          } else {
-            loadBtn.textContent = '📍 Load Place Data';
-            loadBtn.disabled = false;
-          }
-        }
-        
-        if (status) {
-          status.style.color = cacheStatus.loaded === cacheStatus.total ? '#2ecc71' : '#95a5a6';
-        }
-      }
-
-      function getCacheKey(location: Location): string {
-        return `${location.name}-${location.coords.lat}-${location.coords.lng}`;
-      }
-
-      function searchPlace(location: Location, index: number, callback: (result: any) => void) {
-        const cacheKey = getCacheKey(location);
-        if (placesCache[cacheKey]) {
-          callback(placesCache[cacheKey]);
-          return;
-        }
-        
-        // If not cached, show basic info and offer to load
-        callback(null);
-      }
-
-      function loadPlaceData(location: Location, index: number, callback: (result: any) => void) {
-        const cacheKey = getCacheKey(location);
-        if (placesCache[cacheKey]) {
-          callback(placesCache[cacheKey]);
-          return;
-        }
-
-        const request = {
-          location: location.coords,
-          radius: 1000,
-          query: location.name
-        };
-        
-        placesService.textSearch(request, (results: any, status: any) => {
-          if (status === (window as any).google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
-            const place = results[0];
-            const detailRequest = {
-              placeId: place.place_id,
-              fields: [
-                'name', 'rating', 'reviews', 'photos', 'formatted_phone_number',
-                'website', 'opening_hours', 'price_level', 'types', 'vicinity', 'url'
-              ]
-            };
-            placesService.getDetails(detailRequest, (placeDetails: any, detailStatus: any) => {
-              if (detailStatus === (window as any).google.maps.places.PlacesServiceStatus.OK) {
-                placesCache[cacheKey] = placeDetails;
-                cacheStatus.loaded++;
-                updateCacheStatus();
-                callback(placeDetails);
-              } else {
-                callback(null);
-              }
-            });
-          } else {
-            callback(null);
-          }
-        });
-      }
-
-      function loadAllPlacesData() {
-        if (cacheStatus.loading) return;
-        
-        cacheStatus.loading = true;
-        updateCacheStatus();
-        
-        let completedRequests = 0;
-        const totalRequests = locations.length;
-        
-        locations.forEach((location, index) => {
-          const cacheKey = getCacheKey(location);
-          if (placesCache[cacheKey]) {
-            completedRequests++;
-            if (completedRequests === totalRequests) {
-              cacheStatus.loading = false;
-              updateCacheStatus();
-            }
-            return;
-          }
-          
-          // Add delay between requests to avoid rate limiting
-          setTimeout(() => {
-            loadPlaceData(location, index, (result) => {
-              completedRequests++;
-              if (completedRequests === totalRequests) {
-                cacheStatus.loading = false;
-                updateCacheStatus();
-              }
-            });
-          }, index * 200); // 200ms delay between requests
-        });
-      }
 
       function createEnhancedInfoContent(location: Location, placeDetails: any) {
         let content = `
@@ -197,74 +172,16 @@ export default function Home() {
             <div class="info-description">${location.description}</div>
         `;
         
-        if (!placeDetails) {
+        if (location.id) {
           content += `
-            <div class="no-cache-notice">
-              <p>📍 <strong>Place data not loaded yet</strong></p>
-              <p style="font-size: 12px; color: #666; margin: 5px 0;">Click "Load Place Data" button to get photos, reviews, and details for all locations.</p>
+            <div class="info-actions">
+              <button onclick="window.editLocationFromMap(${location.id})" class="info-btn edit-btn">✏️ Edit</button>
+              <button onclick="window.deleteLocationFromMap(${location.id})" class="info-btn delete-btn">🗑️ Delete</button>
+              <a href="https://www.google.com/maps/dir/?api=1&destination=${location.lat},${location.lng}" target="_blank" class="info-btn primary">🧭 Directions</a>
             </div>
           `;
-        } else {
-          if (placeDetails.photos && placeDetails.photos.length > 0) {
-            content += '<div class="info-photos">';
-            const maxPhotos = Math.min(4, placeDetails.photos.length);
-            for (let i = 0; i < maxPhotos; i++) {
-              const photoUrl = placeDetails.photos[i].getUrl({maxWidth: 120, maxHeight: 90});
-              content += `<img src="${photoUrl}" class="info-photo" onclick="window.open('${photoUrl}', '_blank')">`;
-            }
-            content += '</div>';
-          }
-          
-          content += '<div class="info-details">';
-          if (placeDetails.formatted_phone_number) {
-            content += `<div class="info-detail">📞 ${placeDetails.formatted_phone_number}</div>`;
-          }
-          if (placeDetails.opening_hours && placeDetails.opening_hours.isOpen !== undefined) {
-            const isOpen = placeDetails.opening_hours.isOpen();
-            content += `<div class="info-detail">🕒 ${isOpen ? 'Open now' : 'Closed'}</div>`;
-          }
-          if (placeDetails.price_level !== undefined) {
-            const priceSymbols = '€'.repeat(placeDetails.price_level + 1);
-            content += `<div class="info-detail">💰 ${priceSymbols}</div>`;
-          }
-          if (placeDetails.types && placeDetails.types.length > 0) {
-            const mainType = placeDetails.types[0].replace(/_/g, ' ');
-            content += `<div class="info-detail">🏷️ ${mainType}</div>`;
-          }
-          content += '</div>';
-          
-          if (placeDetails.reviews && placeDetails.reviews.length > 0) {
-            content += '<div class="info-reviews">';
-            const maxReviews = Math.min(2, placeDetails.reviews.length);
-            for (let i = 0; i < maxReviews; i++) {
-              const review = placeDetails.reviews[i];
-              const stars = '⭐'.repeat(review.rating);
-              content += `
-                <div class="info-review">
-                  <div class="review-author">${review.author_name}</div>
-                  <div class="review-rating">${stars}</div>
-                  <div class="review-text">${review.text.substring(0, 100)}${review.text.length > 100 ? '...' : ''}</div>
-                </div>
-              `;
-            }
-            content += '</div>';
-          }
-          
-          content += '<div class="info-actions">';
-          if (placeDetails.website) {
-            content += `<a href="${placeDetails.website}" target="_blank" class="info-btn">🌐 Website</a>`;
-          }
-          if (placeDetails.url) {
-            content += `<a href="${placeDetails.url}" target="_blank" class="info-btn">📍 Google Maps</a>`;
-          }
         }
         
-        const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${location.coords.lat},${location.coords.lng}`;
-        content += `<a href="${directionsUrl}" target="_blank" class="info-btn primary">🧭 Directions</a>`;
-        
-        if (placeDetails) {
-          content += '</div>';
-        }
         content += '</div>';
         return content;
       }
@@ -283,8 +200,13 @@ export default function Home() {
             <div class="location-name">${location.name}</div>
             <div class="location-time">${location.time}</div>
             <div class="location-description">${location.description}</div>
+            <div class="location-actions">
+              <button onclick="window.editLocationFromList(${location.id})" class="edit-btn-small">✏️</button>
+              <button onclick="window.deleteLocationFromList(${location.id})" class="delete-btn-small">🗑️</button>
+            </div>
           `;
-          item.addEventListener('click', () => {
+          item.addEventListener('click', (e) => {
+            if ((e.target as Element).closest('.delete-btn-small') || (e.target as Element).closest('.edit-btn-small')) return;
             highlightLocation(index);
             focusOnLocation(index);
           });
@@ -320,7 +242,7 @@ export default function Home() {
 
       function focusOnLocation(index: number) {
         const location = locations[index];
-        map.panTo(location.coords);
+        map.panTo({lat: location.lat, lng: location.lng});
         map.setZoom(13);
         setTimeout(() => {
           (window as any).google.maps.event.trigger(markers[index], 'click');
@@ -361,27 +283,6 @@ export default function Home() {
         if (filteredCount) filteredCount.textContent = String(visibleCount);
       }
 
-      function searchLocations() {
-        const searchBox = document.getElementById('searchBox') as HTMLInputElement | null;
-        const searchTerm = searchBox ? searchBox.value.toLowerCase() : '';
-        const items = document.querySelectorAll('.location-item');
-        let visibleCount = 0;
-        items.forEach((item, index) => {
-          const location = locations[index];
-          const searchText = `${location.name} ${location.description} ${location.time}`.toLowerCase();
-          const matchesSearch = searchText.includes(searchTerm);
-          const matchesFilter = currentFilter === 'all' || location.day === currentFilter;
-          if (matchesSearch && matchesFilter) {
-            (item as HTMLElement).style.display = 'block';
-            visibleCount++;
-          } else {
-            (item as HTMLElement).style.display = 'none';
-          }
-        });
-        const filteredCount = document.getElementById('filtered-count');
-        if (filteredCount) filteredCount.textContent = String(visibleCount);
-      }
-
       function toggleSidebar() {
         const sidebar = document.getElementById('sidebar');
         const isMobile = window.innerWidth <= 768;
@@ -406,9 +307,10 @@ export default function Home() {
       }
 
       function fitAllMarkers() {
+        if (locations.length === 0) return;
         const bounds = new (window as any).google.maps.LatLngBounds();
         locations.forEach(location => {
-          bounds.extend(location.coords);
+          bounds.extend({lat: location.lat, lng: location.lng});
         });
         map.fitBounds(bounds);
         (window as any).google.maps.event.addListenerOnce(map, 'bounds_changed', function() {
@@ -430,7 +332,7 @@ export default function Home() {
         }
       }
 
-      // === INITIALIZATION ===
+      // Initialize map
       map = new (window as any).google.maps.Map(mapRef.current as HTMLDivElement, {
         zoom: 10,
         center: { lat: 39.6953, lng: 2.9139 },
@@ -447,9 +349,10 @@ export default function Home() {
       infoWindow = new (window as any).google.maps.InfoWindow();
       trafficLayer = new (window as any).google.maps.TrafficLayer();
 
+      // Create markers
       locations.forEach((location, index) => {
         const marker = new (window as any).google.maps.Marker({
-          position: location.coords,
+          position: {lat: location.lat, lng: location.lng},
           map: map,
           title: location.name,
           icon: {
@@ -460,31 +363,19 @@ export default function Home() {
         });
         marker.addListener('click', () => {
           highlightLocation(index);
-          
-          // Always show basic content immediately
-          const basicContent = createEnhancedInfoContent(location, null);
-          infoWindow.setContent(basicContent);
+          const content = createEnhancedInfoContent(location, null);
+          infoWindow.setContent(content);
           infoWindow.open(map, marker);
-          
-          // Check if we have cached data
-          const cacheKey = getCacheKey(location);
-          if (placesCache[cacheKey]) {
-            const enhancedContent = createEnhancedInfoContent(location, placesCache[cacheKey]);
-            infoWindow.setContent(enhancedContent);
-          } else {
-            // Show basic info with notice about loading place data
-            const basicContent = createEnhancedInfoContent(location, null);
-            infoWindow.setContent(basicContent);
-          }
         });
         markers[index] = marker;
       });
 
+      // Create route lines
       const dayRoutes: Record<string, any[]> = {
         day1: [], day2: [], day3: [], day4: [], day5: []
       };
       locations.forEach(location => {
-        dayRoutes[location.day].push(location.coords);
+        dayRoutes[location.day].push({lat: location.lat, lng: location.lng});
       });
       Object.keys(dayRoutes).forEach(day => {
         if (dayRoutes[day].length > 1) {
@@ -502,77 +393,168 @@ export default function Home() {
 
       fitAllMarkers();
       populateLocationsList();
-      updateCacheStatus();
 
-      // Attach functions for use in onClick/onInput
+      // Attach functions to window for button clicks
       (window as any).filterByDay = filterByDay;
       (window as any).toggleSidebar = toggleSidebar;
-      (window as any).searchLocations = searchLocations;
       (window as any).toggleMapType = toggleMapType;
       (window as any).fitAllMarkers = fitAllMarkers;
       (window as any).toggleTraffic = toggleTraffic;
-      (window as any).loadAllPlacesData = loadAllPlacesData;
     }
 
     loadGoogleMapsScript(main);
+  };
 
-    // eslint-disable-next-line
-  }, []);
+  useEffect(() => {
+    if (locations.length > 0) {
+      initializeMap();
+    }
+  }, [locations]);
+
+  // Attach delete and edit functions to window for map info windows
+  useEffect(() => {
+    (window as any).deleteLocationFromMap = deleteLocation;
+    (window as any).deleteLocationFromList = deleteLocation;
+    (window as any).editLocationFromMap = (id: number) => {
+      const location = locations.find(loc => loc.id === id);
+      if (location) editLocation(location);
+    };
+    (window as any).editLocationFromList = (id: number) => {
+      const location = locations.find(loc => loc.id === id);
+      if (location) editLocation(location);
+    };
+  }, [locations]);
+
+  const handleLocationAdded = () => {
+    fetchLocations();
+  };
+
+  if (isLoading) {
+    return (
+      <div className="loading-container">
+        <div className="loading-spinner"></div>
+        <p>Loading Mallorca locations...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="error-container">
+        <h2>Error Loading Map</h2>
+        <p>{error}</p>
+        <button onClick={fetchLocations} className="retry-btn">Retry</button>
+      </div>
+    );
+  }
 
   return (
     <>
       <style jsx>{`
-        .cache-controls {
-          margin: 10px 0;
-          padding: 10px;
-          background: rgba(255, 255, 255, 0.1);
-          border-radius: 8px;
-          border: 1px solid rgba(255, 255, 255, 0.2);
+        .loading-container, .error-container {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          height: 100vh;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          text-align: center;
         }
-        
-        .cache-btn {
-          width: 100%;
-          padding: 8px 12px;
-          background: #3498db;
+
+        .loading-spinner {
+          width: 50px;
+          height: 50px;
+          border: 4px solid rgba(255,255,255,0.3);
+          border-top: 4px solid white;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+          margin-bottom: 20px;
+        }
+
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+
+        .retry-btn {
+          padding: 10px 20px;
+          background: white;
+          color: #667eea;
+          border: none;
+          border-radius: 5px;
+          cursor: pointer;
+          font-weight: 600;
+          margin-top: 20px;
+        }
+
+        .add-location-btn {
+          background: #28a745;
           color: white;
           border: none;
+          padding: 10px 15px;
           border-radius: 6px;
           cursor: pointer;
-          font-weight: 500;
-          transition: all 0.2s;
-          margin-bottom: 8px;
+          font-weight: 600;
+          margin: 10px 0;
+          width: 100%;
+          transition: all 0.3s ease;
         }
-        
-        .cache-btn:hover:not(:disabled) {
-          background: #2980b9;
+
+        .add-location-btn:hover {
+          background: #218838;
           transform: translateY(-1px);
         }
-        
-        .cache-btn:disabled {
-          background: #95a5a6;
-          cursor: not-allowed;
-          transform: none;
+
+        .location-actions {
+          margin-top: 8px;
+          text-align: right;
+          display: flex;
+          gap: 5px;
+          justify-content: flex-end;
         }
-        
-        .cache-status {
-          text-align: center;
+
+        .delete-btn-small, .edit-btn-small {
+          background: #dc3545;
+          color: white;
+          border: none;
+          padding: 4px 8px;
+          border-radius: 4px;
+          cursor: pointer;
           font-size: 12px;
-          color: #95a5a6;
         }
-        
-        .no-cache-notice {
-          background: #f8f9fa;
-          border: 1px dashed #ddd;
-          border-radius: 6px;
-          padding: 10px;
-          margin: 10px 0;
-          text-align: center;
+
+        .edit-btn-small {
+          background: #f39c12;
         }
-        
-        .no-cache-notice p {
-          margin: 3px 0;
+
+        .delete-btn-small:hover {
+          background: #c82333;
+        }
+
+        .edit-btn-small:hover {
+          background: #e67e22;
+        }
+
+        .info-btn.delete-btn {
+          background: #dc3545;
+          color: white;
+        }
+
+        .info-btn.delete-btn:hover {
+          background: #c82333;
+        }
+
+        .info-btn.edit-btn {
+          background: #f39c12;
+          color: white;
+        }
+
+        .info-btn.edit-btn:hover {
+          background: #e67e22;
         }
       `}</style>
+
       <button className="mobile-toggle" onClick={() => (window as any).toggleSidebar()}>☰</button>
       <div className="container">
         <div className="sidebar" id="sidebar">
@@ -581,9 +563,10 @@ export default function Home() {
             <p>5-Day Island Paradise</p>
             <button className="toggle-btn" onClick={() => (window as any).toggleSidebar()}>◀</button>
           </div>
+          
           <div className="stats-container">
             <div className="stats-item">
-              <span className="stats-number" id="total-locations">26</span>
+              <span className="stats-number" id="total-locations">{locations.length}</span>
               Locations
             </div>
             <div className="stats-item">
@@ -591,27 +574,20 @@ export default function Home() {
               Days
             </div>
             <div className="stats-item">
-              <span className="stats-number" id="filtered-count">26</span>
+              <span className="stats-number" id="filtered-count">{locations.length}</span>
               Showing
             </div>
           </div>
+
           <div className="search-container">
-            <input
-              type="text"
-              className="search-box"
-              placeholder="🔍 Search locations..."
-              id="searchBox"
-              onInput={() => (window as any).searchLocations()}
-            />
-          </div>
-          <div className="cache-controls">
-            <button className="cache-btn" id="loadPlacesBtn" onClick={() => (window as any).loadAllPlacesData()}>
-              📍 Load Place Data
+            <button 
+              className="add-location-btn"
+              onClick={() => setShowAddForm(true)}
+            >
+              ➕ Add New Location
             </button>
-            <div className="cache-status" id="cacheStatus">
-              <span id="cacheCount">0</span>/26 places cached
-            </div>
           </div>
+
           <div className="day-filters">
             <button className="day-btn all active" onClick={() => (window as any).filterByDay('all')}>
               <span className="day-marker"></span>
@@ -638,10 +614,12 @@ export default function Home() {
               Day 5
             </button>
           </div>
+          
           <div className="locations-list" id="locationsList">
             {/* Locations will be populated by JS */}
           </div>
         </div>
+        
         <div className="map-container">
           <div ref={mapRef} id="map" style={{ width: "100%", height: "100%" }} />
           <div className="map-controls">
@@ -651,6 +629,22 @@ export default function Home() {
           </div>
         </div>
       </div>
+
+      <AddLocationForm
+        isOpen={showAddForm}
+        onClose={() => setShowAddForm(false)}
+        onLocationAdded={handleLocationAdded}
+      />
+
+      <EditLocationModal
+        isOpen={showEditModal}
+        location={editingLocation}
+        onClose={() => {
+          setShowEditModal(false);
+          setEditingLocation(null);
+        }}
+        onLocationUpdated={handleLocationAdded}
+      />
     </>
   );
 }
