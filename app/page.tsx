@@ -244,9 +244,7 @@ export default function Home() {
 
       function focusOnLocation(index: number) {
         const location = locations[index];
-        const lat = parseFloat(location.lat);
-        const lng = parseFloat(location.lng);
-        map.panTo({lat: lat, lng: lng});
+        map.panTo({lat: location.lat, lng: location.lng});
         map.setZoom(13);
         setTimeout(() => {
           (window as any).google.maps.event.trigger(markers[index], 'click');
@@ -314,9 +312,7 @@ export default function Home() {
         if (locations.length === 0) return;
         const bounds = new (window as any).google.maps.LatLngBounds();
         locations.forEach(location => {
-          const lat = parseFloat(location.lat);
-          const lng = parseFloat(location.lng);
-          bounds.extend({lat: lat, lng: lng});
+          bounds.extend({lat: location.lat, lng: location.lng});
         });
         map.fitBounds(bounds);
         (window as any).google.maps.event.addListenerOnce(map, 'bounds_changed', function() {
@@ -357,12 +353,8 @@ export default function Home() {
 
       // Create markers
       locations.forEach((location, index) => {
-        // Ensure coordinates are numbers for Google Maps
-        const lat = parseFloat(location.lat);
-        const lng = parseFloat(location.lng);
-        
         const marker = new (window as any).google.maps.Marker({
-          position: {lat: lat, lng: lng},
+          position: {lat: location.lat, lng: location.lng},
           map: map,
           title: location.name,
           icon: {
@@ -385,9 +377,7 @@ export default function Home() {
         day1: [], day2: [], day3: [], day4: [], day5: []
       };
       locations.forEach(location => {
-        const lat = parseFloat(location.lat);
-        const lng = parseFloat(location.lng);
-        dayRoutes[location.day].push({lat: lat, lng: lng});
+        dayRoutes[location.day].push({lat: location.lat, lng: location.lng});
       });
       Object.keys(dayRoutes).forEach(day => {
         if (dayRoutes[day].length > 1) {
