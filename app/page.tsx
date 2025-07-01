@@ -261,16 +261,16 @@ export default function Home() {
       }
 
       // ==== ALL THE JS LOGIC IS DIRECT COPY BELOW ====
-      let map: google.maps.Map;
-      let markers: { [key: number]: google.maps.Marker } = {};
-      let routeLines: { [key: string]: google.maps.Polyline } = {};
+      let map: any;
+      let markers: any = {};
+      let routeLines: any = {};
       let currentFilter = 'all';
       let highlightedMarker: number | null = null;
       let currentMapType = 'roadmap';
-      let trafficLayer: google.maps.TrafficLayer;
+      let trafficLayer: any;
       let showingTraffic = false;
-      let infoWindow: google.maps.InfoWindow;
-      let placesService: google.maps.places.PlacesService;
+      let infoWindow: any;
+      let placesService: any;
       let placesCache: { [key: string]: any } = {};
 
       function searchPlace(location: any, index: number, callback: (result: any) => void) {
@@ -285,7 +285,7 @@ export default function Home() {
           query: location.name
         };
         placesService.textSearch(request, (results: any, status: any) => {
-          if (status === google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
+          if (status === (window as any).google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
             const place = results[0];
             const detailRequest = {
               placeId: place.place_id,
@@ -295,7 +295,7 @@ export default function Home() {
               ]
             };
             placesService.getDetails(detailRequest, (placeDetails: any, detailStatus: any) => {
-              if (detailStatus === google.maps.places.PlacesServiceStatus.OK) {
+              if (detailStatus === (window as any).google.maps.places.PlacesServiceStatus.OK) {
                 placesCache[cacheKey] = placeDetails;
                 callback(placeDetails);
               } else {
@@ -420,15 +420,15 @@ export default function Home() {
           const oldLocation = locations[highlightedMarker];
           markers[highlightedMarker].setIcon({
             url: createMarkerIcon(dayColors[oldLocation.day], false),
-            scaledSize: new google.maps.Size(25, 25),
-            anchor: new google.maps.Point(12, 12)
+            scaledSize: new (window as any).google.maps.Size(25, 25),
+            anchor: new (window as any).google.maps.Point(12, 12)
           });
         }
         const location = locations[index];
         markers[index].setIcon({
           url: createMarkerIcon(dayColors[location.day], true),
-          scaledSize: new google.maps.Size(30, 30),
-          anchor: new google.maps.Point(15, 15)
+          scaledSize: new (window as any).google.maps.Size(30, 30),
+          anchor: new (window as any).google.maps.Point(15, 15)
         });
         highlightedMarker = index;
       }
@@ -438,7 +438,7 @@ export default function Home() {
         map.panTo(location.coords);
         map.setZoom(13);
         setTimeout(() => {
-          google.maps.event.trigger(markers[index], 'click');
+          (window as any).google.maps.event.trigger(markers[index], 'click');
         }, 500);
       }
 
@@ -521,12 +521,12 @@ export default function Home() {
       }
 
       function fitAllMarkers() {
-        const bounds = new google.maps.LatLngBounds();
+        const bounds = new (window as any).google.maps.LatLngBounds();
         locations.forEach(location => {
           bounds.extend(location.coords);
         });
         map.fitBounds(bounds);
-        google.maps.event.addListenerOnce(map, 'bounds_changed', function() {
+        (window as any).google.maps.event.addListenerOnce(map, 'bounds_changed', function() {
           if (map.getZoom() > 15) {
             map.setZoom(10);
           }
@@ -546,7 +546,7 @@ export default function Home() {
       }
 
       // === INITIALIZATION ===
-      map = new window.google.maps.Map(mapRef.current as HTMLDivElement, {
+      map = new (window as any).google.maps.Map(mapRef.current as HTMLDivElement, {
         zoom: 10,
         center: { lat: 39.6953, lng: 2.9139 },
         mapTypeId: 'roadmap',
@@ -558,19 +558,19 @@ export default function Home() {
           }
         ]
       });
-      placesService = new window.google.maps.places.PlacesService(map);
-      infoWindow = new window.google.maps.InfoWindow();
-      trafficLayer = new window.google.maps.TrafficLayer();
+      placesService = new (window as any).google.maps.places.PlacesService(map);
+      infoWindow = new (window as any).google.maps.InfoWindow();
+      trafficLayer = new (window as any).google.maps.TrafficLayer();
 
       locations.forEach((location, index) => {
-        const marker = new google.maps.Marker({
+        const marker = new (window as any).google.maps.Marker({
           position: location.coords,
           map: map,
           title: location.name,
           icon: {
             url: createMarkerIcon(dayColors[location.day]),
-            scaledSize: new google.maps.Size(25, 25),
-            anchor: new google.maps.Point(12, 12)
+            scaledSize: new (window as any).google.maps.Size(25, 25),
+            anchor: new (window as any).google.maps.Point(12, 12)
           }
         });
         marker.addListener('click', () => {
@@ -606,7 +606,7 @@ export default function Home() {
       });
       Object.keys(dayRoutes).forEach(day => {
         if (dayRoutes[day].length > 1) {
-          const polyline = new google.maps.Polyline({
+          const polyline = new (window as any).google.maps.Polyline({
             path: dayRoutes[day],
             geodesic: true,
             strokeColor: dayColors[day],
