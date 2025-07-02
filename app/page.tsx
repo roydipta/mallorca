@@ -153,35 +153,230 @@ export default function Home() {
       let infoWindow: any;
       let placesService: any;
       let placesCache: { [key: string]: any } = {};
-      let cacheStatus = { loaded: 0, total: locations.length, loading: false };
 
-      function createEnhancedInfoContent(location: Location, placeDetails: any) {
+      // Enhanced Places API functions
+      async function findNearbyPlace(location: Location): Promise<any> {
+        const cacheKey = `${location.lat},${location.lng}`;
+        if (placesCache[cacheKey]) {
+          return placesCache[cacheKey];
+        }
+
+        return new Promise((resolve) => {
+          const request = {
+            location: new (window as any).google.maps.LatLng(location.lat, location.lng),
+            radius: 100, // Search within 100 meters
+            type: 'tourist_attraction',
+            keyword: location.name
+          };
+
+          placesService.nearbySearch(request, (results: any[], status: any) => {
+            if (status === (window as any).google.maps.places.PlacesServiceStatus.OK && results.length > 0) {
+              // Try to find the best match
+              let bestMatch = results[0];
+              for (const result of results) {
+                if (result.name.toLowerCase().includes(location.name.toLowerCase()) ||
+                    location.name.toLowerCase().includes(result.name.toLowerCase())) {
+                  bestMatch = result;
+                  break;
+                }
+              }
+              placesCache[cacheKey] = bestMatch;
+              resolve(bestMatch);
+            } else {
+              // If no results, try text search
+              textSearchPlace(location).then(resolve);
+            }
+          });
+        });
+      }
+
+      async function textSearchPlace(location: Location): Promise<any> {
+        const cacheKey = `text_${location.name}`;
+        if (placesCache[cacheKey]) {
+          return placesCache[cacheKey];
+        }
+
+        return new Promise((resolve) => {
+          const request = {
+            query: `${location.name} Mallorca Spain`,
+            location: new (window as any).google.maps.LatLng(location.lat, location.lng),
+            radius: 1000
+          };
+
+          placesService.textSearch(request, (results: any[], status: any) => {
+            if (status === (window as any).google.maps.places.PlacesServiceStatus.OK && results.length > 0) {
+              placesCache[cacheKey] = results[0];
+              resolve(results[0]);
+            } else {
+              resolve(null);
+            }
+          });
+        });
+      }
+
+      async function getPlaceDetails(placeId: string): Promise<any> {
+        if (placesCache[`details_${placeId}`]) {
+          return placesCache[`details_${placeId}`];
+        }
+
+        return new Promise((resolve) => {
+          const request = {
+            placeId: placeId,
+            fields: ['name', 'rating', 'reviews', 'photos', 'formatted_phone_number', 'website', 'opening_hours', 'price_level']
+          };
+
+          placesService.getDetails(request, (place: any, status: any) => {
+            if (status === (window as any).google.maps.places.PlacesServiceStatus.OK) {
+              placesCache[`details_${placeId}`] = place;
+              resolve(place);
+            } else {
+              resolve(null);
+            }
+          });
+        });
+      }
+
+      function getPhotoUrl(photo: any, maxWidth = 400): string {
+        return photo.getUrl({ maxWidth });
+      }
+
+      async function loadPlaceData(location: Location, locationIndex: number): Promise<any> {
+        try {
+          const place = await findNearbyPlace(location);
+          if (place && place.place_id) {
+            const details = await getPlaceDetails(place.place_id);
+            return { place, details };
+          }
+          return { place: null, details: null };
+        } catch (error) {
+          console.error('Error loading place data:', error);
+          return { place: null, details: null };
+        }
+      }
+
+      function createEnhancedInfoContent(location: Location, placeData: any, isLoading = false) {
         let content = `
           <div class="enhanced-info-window">
             <div class="info-header">
               <div class="info-title">${location.name}</div>
         `;
-        if (placeDetails && placeDetails.rating) {
+
+        if (isLoading) {
           content += `
             <div class="info-rating">
-              ⭐ ${placeDetails.rating}
+              <div class="loading-spinner"></div>
+            </div>
+          `;
+        } else if (placeData?.details?.rating) {
+          content += `
+            <div class="info-rating">
+              ⭐ ${placeData.details.rating}
             </div>
           `;
         }
+
         content += `
             </div>
             <div class="info-time">${location.time}</div>
             <div class="info-description">${location.description}</div>
         `;
-        
+
+        // Add photos if available
+        if (!isLoading && placeData?.details?.photos && placeData.details.photos.length > 0) {
+          content += '<div class="info-photos">';
+          const photosToShow = placeData.details.photos.slice(0, 4); // Show up to 4 photos
+          photosToShow.forEach((photo: any, index: number) => {
+            const photoUrl = getPhotoUrl(photo, 200);
+            content += `
+              <img src="${photoUrl}" 
+                   alt="${location.name} photo ${index + 1}" 
+                   class="info-photo"
+                   onclick="window.open('${getPhotoUrl(photo, 800)}', '_blank')" />
+            `;
+          });
+          content += '</div>';
+        }
+
+        // Add place details if available
+        if (!isLoading && placeData?.details) {
+          const details = placeData.details;
+          content += '<div class="info-details">';
+          
+          if (details.formatted_phone_number) {
+            content += `
+              <div class="info-detail">
+                📞 ${details.formatted_phone_number}
+              </div>
+            `;
+          }
+          
+          if (details.website) {
+            content += `
+              <div class="info-detail">
+                🌐 <a href="${details.website}" target="_blank" style="color: #2a5298;">Website</a>
+              </div>
+            `;
+          }
+          
+          if (details.price_level !== undefined) {
+            const priceLevel = '💰'.repeat(details.price_level || 1);
+            content += `
+              <div class="info-detail">
+                ${priceLevel} Price Level
+              </div>
+            `;
+          }
+          
+          if (details.opening_hours?.weekday_text) {
+            const today = new Date().getDay();
+            const todayHours = details.opening_hours.weekday_text[today === 0 ? 6 : today - 1];
+            content += `
+              <div class="info-detail">
+                🕒 ${todayHours}
+              </div>
+            `;
+          }
+          
+          content += '</div>';
+        }
+
+        // Add reviews if available
+        if (!isLoading && placeData?.details?.reviews && placeData.details.reviews.length > 0) {
+          content += '<div class="info-reviews">';
+          content += '<h4 style="margin: 10px 0 5px 0; color: #2c3e50;">Recent Reviews:</h4>';
+          
+          const reviewsToShow = placeData.details.reviews.slice(0, 2); // Show up to 2 reviews
+          reviewsToShow.forEach((review: any) => {
+            const stars = '⭐'.repeat(review.rating);
+            const reviewText = review.text.length > 120 ? 
+              review.text.substring(0, 120) + '...' : review.text;
+            
+            content += `
+              <div class="info-review">
+                <div class="review-author">${review.author_name}</div>
+                <div class="review-rating">${stars}</div>
+                <div class="review-text">${reviewText}</div>
+              </div>
+            `;
+          });
+          content += '</div>';
+        }
+
         if (location.id) {
           content += `
             <div class="info-actions">
               <button onclick="window.editLocationFromMap(${location.id})" class="info-btn edit-btn">✏️ Edit</button>
               <button onclick="window.deleteLocationFromMap(${location.id})" class="info-btn delete-btn">🗑️ Delete</button>
               <a href="https://www.google.com/maps/dir/?api=1&destination=${location.lat},${location.lng}" target="_blank" class="info-btn primary">🧭 Directions</a>
-            </div>
           `;
+          
+          if (placeData?.details?.website) {
+            content += `
+              <a href="${placeData.details.website}" target="_blank" class="info-btn">🌐 Website</a>
+            `;
+          }
+          
+          content += '</div>';
         }
         
         content += '</div>';
@@ -348,10 +543,12 @@ export default function Home() {
         ]
       });
       placesService = new (window as any).google.maps.places.PlacesService(map);
-      infoWindow = new (window as any).google.maps.InfoWindow();
+      infoWindow = new (window as any).google.maps.InfoWindow({
+        maxWidth: 420
+      });
       trafficLayer = new (window as any).google.maps.TrafficLayer();
 
-      // Create markers
+      // Create markers with enhanced click handlers
       locations.forEach((location, index) => {
         const marker = new (window as any).google.maps.Marker({
           position: {lat: location.lat, lng: location.lng},
@@ -363,14 +560,35 @@ export default function Home() {
             anchor: new (window as any).google.maps.Point(12, 12)
           }
         });
-        marker.addListener('click', () => {
+
+        marker.addListener('click', async () => {
           highlightLocation(index);
-          const content = createEnhancedInfoContent(location, null);
-          infoWindow.setContent(content);
+          
+          // Show loading content first
+          const loadingContent = createEnhancedInfoContent(location, null, true);
+          infoWindow.setContent(loadingContent);
           infoWindow.open(map, marker);
+          
+          // Load place data in the background
+          const placeData = await loadPlaceData(location, index);
+          
+          // Update with full content
+          const finalContent = createEnhancedInfoContent(location, placeData, false);
+          infoWindow.setContent(finalContent);
         });
+
         markers[index] = marker;
       });
+
+      // Preload some place data for better performance
+      async function preloadPlaceData() {
+        console.log('Preloading place data...');
+        const promises = locations.slice(0, 5).map((location, index) => 
+          loadPlaceData(location, index)
+        );
+        await Promise.all(promises);
+        console.log('Initial place data loaded');
+      }
 
       // Create route lines
       const dayRoutes: Record<string, any[]> = {
@@ -395,6 +613,9 @@ export default function Home() {
 
       fitAllMarkers();
       populateLocationsList();
+      
+      // Start preloading place data
+      setTimeout(preloadPlaceData, 1000);
 
       // Attach functions to window for button clicks
       (window as any).filterByDay = filterByDay;
