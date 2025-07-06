@@ -1,22 +1,21 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import AddLocationForm from './components/AddLocationForm';
-import EditLocationModal from './components/EditLocationModal';
+import { MapPin, Calendar, Clock, Plus, Edit3, Trash2, Navigation, Satellite, Car, Grid3X3, X, Menu, Loader2 } from 'lucide-react';
 
-// Constants from the original data
+// Modern color scheme with better contrast and sophistication
 const dayColors: Record<string, string> = {
-  day1: '#e74c3c',
-  day2: '#f39c12',
-  day3: '#2ecc71',
-  day4: '#3498db',
-  day5: '#9b59b6'
+  day1: '#ff6b6b',  // Coral red
+  day2: '#ffa726',  // Warm orange  
+  day3: '#66bb6a',  // Fresh green
+  day4: '#42a5f5',  // Sky blue
+  day5: '#ab47bc'   // Purple
 };
 
 const dayNames: Record<string, string> = {
-  day1: 'North Coast',
-  day2: 'UNESCO Villages',
-  day3: 'Wine Country',
+  day1: 'North Coast Adventure',
+  day2: 'UNESCO Heritage Villages', 
+  day3: 'Wine Country Journey',
   day4: 'Southeast Paradise',
   day5: 'West Coast Finale'
 };
@@ -33,7 +32,82 @@ interface Location {
   updated_at?: string;
 }
 
-export default function Home() {
+// Mock components - replace with your actual components
+const AddLocationForm = ({ isOpen, onClose, onLocationAdded }: any) => {
+  if (!isOpen) return null;
+  
+  return (
+    <div className="modal-overlay">
+      <div className="modal-content">
+        <div className="modal-header">
+          <h2>Add New Location</h2>
+          <button onClick={onClose} className="modal-close-btn">
+            <X size={20} />
+          </button>
+        </div>
+        <div className="modal-body">
+          <input 
+            type="text" 
+            placeholder="Location name"
+            className="modal-input"
+          />
+          <textarea 
+            placeholder="Description"
+            className="modal-textarea"
+          />
+          <div className="modal-actions">
+            <button onClick={onClose} className="modal-btn-secondary">
+              Cancel
+            </button>
+            <button onClick={() => { onLocationAdded(); onClose(); }} className="modal-btn-primary">
+              Add Location
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const EditLocationModal = ({ isOpen, location, onClose, onLocationUpdated }: any) => {
+  if (!isOpen) return null;
+  
+  return (
+    <div className="modal-overlay">
+      <div className="modal-content">
+        <div className="modal-header">
+          <h2>Edit Location</h2>
+          <button onClick={onClose} className="modal-close-btn">
+            <X size={20} />
+          </button>
+        </div>
+        <div className="modal-body">
+          <input 
+            type="text" 
+            defaultValue={location?.name}
+            placeholder="Location name"
+            className="modal-input"
+          />
+          <textarea 
+            defaultValue={location?.description}
+            placeholder="Description"
+            className="modal-textarea"
+          />
+          <div className="modal-actions">
+            <button onClick={onClose} className="modal-btn-secondary">
+              Cancel
+            </button>
+            <button onClick={() => { onLocationUpdated(); onClose(); }} className="modal-btn-primary">
+              Update Location
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default function ModernMallorcaMap() {
   const mapRef = useRef<HTMLDivElement>(null);
   const [locations, setLocations] = useState<Location[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -41,6 +115,10 @@ export default function Home() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingLocation, setEditingLocation] = useState<Location | null>(null);
   const [error, setError] = useState('');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [activeFilter, setActiveFilter] = useState('all');
+  const [activeLocation, setActiveLocation] = useState<number | null>(null);
 
   // Fetch locations from API
   const fetchLocations = async () => {
@@ -101,8 +179,10 @@ export default function Home() {
   }, []);
 
   const initializeMap = () => {
+    console.log('Initializing map...'); // Debug log
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
     if (!apiKey) {
+      console.error('Google Maps API key is missing.');
       setError('Google Maps API key is missing.');
       return;
     }
@@ -129,8 +209,15 @@ export default function Home() {
     }
 
     function main() {
-      if (locations.length === 0) return;
-
+      console.log('Map main function called, locations:', locations.length); // Debug log
+      
+      if (!mapRef.current) {
+        console.error('Map container ref not available');
+        return;
+      }
+      
+      // Initialize map even without locations (just like original)
+      
       function createMarkerIcon(color: string, isHighlighted = false) {
         const size = isHighlighted ? 30 : 25;
         const svg = `
@@ -153,6 +240,60 @@ export default function Home() {
       let infoWindow: any;
       let placesService: any;
       let placesCache: { [key: string]: any } = {};
+
+      // Initialize map first
+      map = new (window as any).google.maps.Map(mapRef.current as HTMLDivElement, {
+        zoom: 10,
+        center: { lat: 39.6953, lng: 2.9139 },
+        mapTypeId: 'roadmap',
+        styles: [
+          {
+            featureType: "poi",
+            elementType: "labels",
+            stylers: [{ visibility: "off" }]
+          }
+        ]
+      });
+      console.log('Google Map created successfully:', map); // Debug log
+      
+      placesService = new (window as any).google.maps.places.PlacesService(map);
+      infoWindow = new (window as any).google.maps.InfoWindow({
+        maxWidth: 420
+      });
+      trafficLayer = new (window as any).google.maps.TrafficLayer();
+
+      // Store map reference globally for access from other functions
+      (window as any).mallorcaMap = map;
+      (window as any).markers = markers;
+
+      // Only add markers and routes if we have locations
+      if (locations.length === 0) {
+        // Attach functions to window for button clicks even without locations
+        (window as any).filterByDay = (day: string) => setActiveFilter(day);
+        (window as any).toggleSidebar = () => setSidebarCollapsed(!sidebarCollapsed);
+        (window as any).toggleMapType = () => {
+          if (currentMapType === 'roadmap') {
+            map.setMapTypeId('satellite');
+            currentMapType = 'satellite';
+          } else {
+            map.setMapTypeId('roadmap');
+            currentMapType = 'roadmap';
+          }
+        };
+        (window as any).fitAllMarkers = () => {
+          // Do nothing if no markers
+        };
+        (window as any).toggleTraffic = () => {
+          if (showingTraffic) {
+            trafficLayer.setMap(null);
+            showingTraffic = false;
+          } else {
+            trafficLayer.setMap(map);
+            showingTraffic = true;
+          }
+        };
+        return;
+      }
 
       // Enhanced Places API functions
       async function findNearbyPlace(location: Location): Promise<any> {
@@ -256,7 +397,7 @@ export default function Home() {
 
       function createEnhancedInfoContent(location: Location, placeData: any, isLoading = false) {
         let content = `
-          <div class="enhanced-info-window">
+          <div class="modern-info-window">
             <div class="info-header">
               <div class="info-title">${location.name}</div>
         `;
@@ -264,7 +405,7 @@ export default function Home() {
         if (isLoading) {
           content += `
             <div class="info-rating">
-              <div class="loading-spinner"></div>
+              <div class="modern-loading-spinner"></div>
             </div>
           `;
         } else if (placeData?.details?.rating) {
@@ -313,7 +454,7 @@ export default function Home() {
           if (details.website) {
             content += `
               <div class="info-detail">
-                🌐 <a href="${details.website}" target="_blank" style="color: #2a5298;">Website</a>
+                🌐 <a href="${details.website}" target="_blank" style="color: #42a5f5;">Website</a>
               </div>
             `;
           }
@@ -343,7 +484,7 @@ export default function Home() {
         // Add reviews if available
         if (!isLoading && placeData?.details?.reviews && placeData.details.reviews.length > 0) {
           content += '<div class="info-reviews">';
-          content += '<h4 style="margin: 10px 0 5px 0; color: #2c3e50;">Recent Reviews:</h4>';
+          content += '<h4 style="margin: 10px 0 5px 0; color: #1e293b;">Recent Reviews:</h4>';
           
           const reviewsToShow = placeData.details.reviews.slice(0, 2); // Show up to 2 reviews
           reviewsToShow.forEach((review: any) => {
@@ -365,14 +506,14 @@ export default function Home() {
         if (location.id) {
           content += `
             <div class="info-actions">
-              <button onclick="window.editLocationFromMap(${location.id})" class="info-btn edit-btn">✏️ Edit</button>
-              <button onclick="window.deleteLocationFromMap(${location.id})" class="info-btn delete-btn">🗑️ Delete</button>
-              <a href="https://www.google.com/maps/dir/?api=1&destination=${location.lat},${location.lng}" target="_blank" class="info-btn primary">🧭 Directions</a>
+              <button onclick="window.editLocationFromMap(${location.id})" class="modern-info-btn edit-btn">✏️ Edit</button>
+              <button onclick="window.deleteLocationFromMap(${location.id})" class="modern-info-btn delete-btn">🗑️ Delete</button>
+              <a href="https://www.google.com/maps/dir/?api=1&destination=${location.lat},${location.lng}" target="_blank" class="modern-info-btn primary">🧭 Directions</a>
           `;
           
           if (placeData?.details?.website) {
             content += `
-              <a href="${placeData.details.website}" target="_blank" class="info-btn">🌐 Website</a>
+              <a href="${placeData.details.website}" target="_blank" class="modern-info-btn">🌐 Website</a>
             `;
           }
           
@@ -384,42 +525,12 @@ export default function Home() {
       }
 
       function populateLocationsList() {
-        const container = document.getElementById('locationsList');
-        if (!container) return;
-        container.innerHTML = '';
-        locations.forEach((location, index) => {
-          const item = document.createElement('div');
-          item.className = 'location-item';
-          (item as any).dataset.day = location.day;
-          (item as any).dataset.index = index;
-          item.innerHTML = `
-            <div class="location-day ${location.day}-tag">${dayNames[location.day]}</div>
-            <div class="location-name">${location.name}</div>
-            <div class="location-time">${location.time}</div>
-            <div class="location-description">${location.description}</div>
-            <div class="location-actions">
-              <button onclick="window.editLocationFromList(${location.id})" class="edit-btn-small">✏️</button>
-              <button onclick="window.deleteLocationFromList(${location.id})" class="delete-btn-small">🗑️</button>
-            </div>
-          `;
-          item.addEventListener('click', (e) => {
-            if ((e.target as Element).closest('.delete-btn-small') || (e.target as Element).closest('.edit-btn-small')) return;
-            highlightLocation(index);
-            focusOnLocation(index);
-          });
-          container.appendChild(item);
-        });
+        // This will be handled by React component instead of direct DOM manipulation
       }
 
       function highlightLocation(index: number) {
-        document.querySelectorAll('.location-item').forEach(item => {
-          item.classList.remove('active');
-        });
-        const items = document.querySelectorAll('.location-item');
-        if (items[index]) {
-          items[index].classList.add('active');
-          (items[index] as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
+        setActiveLocation(index);
+        
         if (highlightedMarker !== null) {
           const oldLocation = locations[highlightedMarker];
           markers[highlightedMarker].setIcon({
@@ -448,19 +559,8 @@ export default function Home() {
 
       function filterByDay(day: string) {
         currentFilter = day;
-        document.querySelectorAll('.day-btn').forEach(btn => btn.classList.remove('active'));
-        document.querySelector(`.day-btn.${day}`)?.classList.add('active');
-        const items = document.querySelectorAll('.location-item');
-        let visibleCount = 0;
-        items.forEach((item, index) => {
-          const location = locations[index];
-          if (day === 'all' || location.day === day) {
-            (item as HTMLElement).style.display = 'block';
-            visibleCount++;
-          } else {
-            (item as HTMLElement).style.display = 'none';
-          }
-        });
+        setActiveFilter(day);
+        
         Object.keys(markers).forEach(index => {
           const location = locations[Number(index)];
           if (day === 'all' || location.day === day) {
@@ -476,30 +576,19 @@ export default function Home() {
             routeLines[routeDay].setOptions({ strokeOpacity: 0.1 });
           }
         });
-        const filteredCount = document.getElementById('filtered-count');
-        if (filteredCount) filteredCount.textContent = String(visibleCount);
       }
 
       function toggleSidebar() {
-        const sidebar = document.getElementById('sidebar');
-        const isMobile = window.innerWidth <= 768;
-        if (!sidebar) return;
-        if (isMobile) {
-          sidebar.classList.toggle('open');
-        } else {
-          sidebar.classList.toggle('collapsed');
-        }
+        setSidebarOpen(!sidebarOpen);
       }
 
       function toggleMapType() {
         if (currentMapType === 'roadmap') {
           map.setMapTypeId('satellite');
           currentMapType = 'satellite';
-          document.querySelector('.map-control-btn')!.textContent = '🗺️ Map';
         } else {
           map.setMapTypeId('roadmap');
           currentMapType = 'roadmap';
-          document.querySelector('.map-control-btn')!.textContent = '🛰️ Satellite';
         }
       }
 
@@ -521,11 +610,9 @@ export default function Home() {
         if (showingTraffic) {
           trafficLayer.setMap(null);
           showingTraffic = false;
-          document.querySelectorAll('.map-control-btn')[2].textContent = '🚗 Traffic';
         } else {
           trafficLayer.setMap(map);
           showingTraffic = true;
-          document.querySelectorAll('.map-control-btn')[2].textContent = '❌ Traffic';
         }
       }
 
@@ -612,7 +699,6 @@ export default function Home() {
       });
 
       fitAllMarkers();
-      populateLocationsList();
       
       // Start preloading place data
       setTimeout(preloadPlaceData, 1000);
@@ -629,7 +715,13 @@ export default function Home() {
   };
 
   useEffect(() => {
-    if (locations.length > 0) {
+    // Initialize map regardless of locations, just like the original
+    initializeMap();
+  }, []);
+
+  // Re-initialize map when locations change (for markers and routes)
+  useEffect(() => {
+    if (locations.length > 0 && (window as any).google?.maps) {
       initializeMap();
     }
   }, [locations]);
@@ -652,11 +744,43 @@ export default function Home() {
     fetchLocations();
   };
 
+  const handleLocationClick = (index: number) => {
+    setActiveLocation(index);
+    // Add map focusing logic here
+    if ((window as any).google && (window as any).google.maps) {
+      const location = locations[index];
+      // Trigger the map click event for the marker
+      setTimeout(() => {
+        (window as any).google.maps.event.trigger((window as any).markers?.[index], 'click');
+      }, 100);
+    }
+  };
+
+  const filteredLocations = activeFilter === 'all' 
+    ? locations 
+    : locations.filter(loc => loc.day === activeFilter);
+
+  const dayFilters = [
+    { key: 'all', label: 'All Days', color: 'all' },
+    { key: 'day1', label: 'Day 1', color: 'day1' },
+    { key: 'day2', label: 'Day 2', color: 'day2' },
+    { key: 'day3', label: 'Day 3', color: 'day3' },
+    { key: 'day4', label: 'Day 4', color: 'day4' },
+    { key: 'day5', label: 'Day 5', color: 'day5' },
+  ];
+
   if (isLoading) {
     return (
       <div className="loading-container">
-        <div className="loading-spinner"></div>
-        <p>Loading Mallorca locations...</p>
+        <div className="loading-content">
+          <div className="loading-icon">
+            <Loader2 size={32} />
+          </div>
+          <div className="loading-text">
+            <h3>Loading Mallorca</h3>
+            <p>Fetching your travel locations...</p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -664,210 +788,266 @@ export default function Home() {
   if (error) {
     return (
       <div className="error-container">
-        <h2>Error Loading Map</h2>
-        <p>{error}</p>
-        <button onClick={fetchLocations} className="retry-btn">Retry</button>
+        <div className="error-content">
+          <div className="error-icon">
+            <X size={32} />
+          </div>
+          <div className="error-text">
+            <h3>Error Loading Map</h3>
+            <p>{error}</p>
+            <button onClick={fetchLocations} className="retry-btn">
+              Retry
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
     <>
-      <style jsx>{`
-        .loading-container, .error-container {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          height: 100vh;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-          text-align: center;
-        }
+      <div className="app-container">
+        {/* Animated background elements */}
+        <div className="background-orbs">
+          <div className="orb orb-1"></div>
+          <div className="orb orb-2"></div>
+          <div className="orb orb-3"></div>
+        </div>
 
-        .loading-spinner {
-          width: 50px;
-          height: 50px;
-          border: 4px solid rgba(255,255,255,0.3);
-          border-top: 4px solid white;
-          border-radius: 50%;
-          animation: spin 1s linear infinite;
-          margin-bottom: 20px;
-        }
+        {/* Mobile menu button */}
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="mobile-menu-btn"
+        >
+          {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
+        </button>
 
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-
-        .retry-btn {
-          padding: 10px 20px;
-          background: white;
-          color: #667eea;
-          border: none;
-          border-radius: 5px;
-          cursor: pointer;
-          font-weight: 600;
-          margin-top: 20px;
-        }
-
-        .add-location-btn {
-          background: #28a745;
-          color: white;
-          border: none;
-          padding: 10px 15px;
-          border-radius: 6px;
-          cursor: pointer;
-          font-weight: 600;
-          margin: 10px 0;
-          width: 100%;
-          transition: all 0.3s ease;
-        }
-
-        .add-location-btn:hover {
-          background: #218838;
-          transform: translateY(-1px);
-        }
-
-        .location-actions {
-          margin-top: 8px;
-          text-align: right;
-          display: flex;
-          gap: 5px;
-          justify-content: flex-end;
-        }
-
-        .delete-btn-small, .edit-btn-small {
-          background: #dc3545;
-          color: white;
-          border: none;
-          padding: 4px 8px;
-          border-radius: 4px;
-          cursor: pointer;
-          font-size: 12px;
-        }
-
-        .edit-btn-small {
-          background: #f39c12;
-        }
-
-        .delete-btn-small:hover {
-          background: #c82333;
-        }
-
-        .edit-btn-small:hover {
-          background: #e67e22;
-        }
-
-        .info-btn.delete-btn {
-          background: #dc3545;
-          color: white;
-        }
-
-        .info-btn.delete-btn:hover {
-          background: #c82333;
-        }
-
-        .info-btn.edit-btn {
-          background: #f39c12;
-          color: white;
-        }
-
-        .info-btn.edit-btn:hover {
-          background: #e67e22;
-        }
-      `}</style>
-
-      <button className="mobile-toggle" onClick={() => (window as any).toggleSidebar()}>☰</button>
-      <div className="container">
-        <div className="sidebar" id="sidebar">
-          <div className="header">
-            <h1>🏝️ Mallorca</h1>
-            <p>5-Day Island Paradise</p>
-            <button className="toggle-btn" onClick={() => (window as any).toggleSidebar()}>◀</button>
-          </div>
+        {/* Main container */}
+        <div className="main-container">
           
-          <div className="stats-container">
-            <div className="stats-item">
-              <span className="stats-number" id="total-locations">{locations.length}</span>
-              Locations
+          {/* Sidebar */}
+          <div className={`sidebar ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+            
+            {/* Header */}
+            <div className="sidebar-header">
+              <div className="header-content">
+                <div className="header-icon">
+                  <MapPin size={24} />
+                </div>
+                <div className="header-text">
+                  <h1>Mallorca</h1>
+                  <p>5-Day Island Paradise</p>
+                </div>
+                <button 
+                  className="sidebar-toggle-btn"
+                  onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                >
+                  {sidebarCollapsed ? '▶' : '◀'}
+                </button>
+              </div>
+              
+              {/* Stats */}
+              <div className="stats-grid">
+                <div className="stat-item">
+                  <div className="stat-number">{locations.length}</div>
+                  <div className="stat-label">Locations</div>
+                </div>
+                <div className="stat-item">
+                  <div className="stat-number">5</div>
+                  <div className="stat-label">Days</div>
+                </div>
+                <div className="stat-item">
+                  <div className="stat-number">{filteredLocations.length}</div>
+                  <div className="stat-label">Showing</div>
+                </div>
+              </div>
             </div>
-            <div className="stats-item">
-              <span className="stats-number">5</span>
-              Days
+
+            {/* Add Location Button */}
+            <div className="add-location-section">
+              <button 
+                onClick={() => setShowAddForm(true)}
+                className="add-location-btn"
+              >
+                <Plus size={20} />
+                Add New Location
+              </button>
             </div>
-            <div className="stats-item">
-              <span className="stats-number" id="filtered-count">{locations.length}</span>
-              Showing
+
+            {/* Day Filters */}
+            <div className="filters-section">
+              <h3 className="filters-title">Filter by Day</h3>
+              <div className="filters-horizontal">
+                {dayFilters.map((filter) => (
+                  <button
+                    key={filter.key}
+                    onClick={() => {
+                      setActiveFilter(filter.key);
+                      if ((window as any).filterByDay) {
+                        (window as any).filterByDay(filter.key);
+                      }
+                    }}
+                    className={`filter-btn-horizontal ${filter.color} ${activeFilter === filter.key ? 'active' : ''}`}
+                  >
+                    <div className={`filter-marker ${filter.color}`}></div>
+                    <span className="filter-label">{filter.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Locations List */}
+            <div className="locations-section">
+              {filteredLocations.map((location, index) => (
+                <div
+                  key={location.id}
+                  onClick={() => handleLocationClick(index)}
+                  className={`location-card ${activeLocation === index ? 'active' : ''}`}
+                >
+                  {/* Day badge */}
+                  <div className="location-header">
+                    <span 
+                      className={`day-badge ${location.day}`}
+                    >
+                      {dayNames[location.day]}
+                    </span>
+                    <div className="location-actions">
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          editLocation(location);
+                        }}
+                        className="action-btn edit"
+                      >
+                        <Edit3 size={12} />
+                      </button>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (location.id) deleteLocation(location.id);
+                        }}
+                        className="action-btn delete"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Location info */}
+                  <h4 className="location-name">
+                    {location.name}
+                  </h4>
+                  
+                  <div className="location-time">
+                    <Clock size={16} />
+                    <span>{location.time}</span>
+                  </div>
+                  
+                  <p className="location-description">
+                    {location.description}
+                  </p>
+                </div>
+              ))}
             </div>
           </div>
 
-          <div className="search-container">
-            <button 
-              className="add-location-btn"
-              onClick={() => setShowAddForm(true)}
-            >
-              ➕ Add New Location
-            </button>
-          </div>
+          {/* Map Container */}
+          <div className="map-container">
+            {/* Map */}
+            <div ref={mapRef} className="map" />
 
-          <div className="day-filters">
-            <button className="day-btn all active" onClick={() => (window as any).filterByDay('all')}>
-              <span className="day-marker"></span>
-              All Days
-            </button>
-            <button className="day-btn day1" onClick={() => (window as any).filterByDay('day1')}>
-              <span className="day-marker"></span>
-              Day 1
-            </button>
-            <button className="day-btn day2" onClick={() => (window as any).filterByDay('day2')}>
-              <span className="day-marker"></span>
-              Day 2
-            </button>
-            <button className="day-btn day3" onClick={() => (window as any).filterByDay('day3')}>
-              <span className="day-marker"></span>
-              Day 3
-            </button>
-            <button className="day-btn day4" onClick={() => (window as any).filterByDay('day4')}>
-              <span className="day-marker"></span>
-              Day 4
-            </button>
-            <button className="day-btn day5" onClick={() => (window as any).filterByDay('day5')}>
-              <span className="day-marker"></span>
-              Day 5
-            </button>
-          </div>
-          
-          <div className="locations-list" id="locationsList">
-            {/* Locations will be populated by JS */}
+            {/* Floating map controls */}
+            <div className="map-controls">
+              <button 
+                onClick={() => (window as any).toggleMapType?.()}
+                className="map-control-btn"
+              >
+                <Satellite size={20} />
+              </button>
+              <button 
+                onClick={() => (window as any).fitAllMarkers?.()}
+                className="map-control-btn"
+              >
+                <Navigation size={20} />
+              </button>
+              <button 
+                onClick={() => (window as any).toggleTraffic?.()}
+                className="map-control-btn"
+              >
+                <Car size={20} />
+              </button>
+              <button className="map-control-btn">
+                <Grid3X3 size={20} />
+              </button>
+            </div>
+
+            {/* Floating info card for selected location */}
+            {activeLocation !== null && filteredLocations[activeLocation] && (
+              <div className="floating-info-card">
+                <div className="info-card-header">
+                  <div className="info-card-content">
+                    <h4 className="info-card-title">
+                      {filteredLocations[activeLocation]?.name}
+                    </h4>
+                    <div className="info-card-time">
+                      <Clock size={16} />
+                      <span>{filteredLocations[activeLocation]?.time}</span>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setActiveLocation(null)}
+                    className="info-card-close"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+                
+                <p className="info-card-description">
+                  {filteredLocations[activeLocation]?.description}
+                </p>
+                
+                <div className="info-card-actions">
+                  <a
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${filteredLocations[activeLocation]?.lat},${filteredLocations[activeLocation]?.lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="info-card-btn primary"
+                  >
+                    <Navigation size={16} />
+                    Directions
+                  </a>
+                  <button 
+                    onClick={() => editLocation(filteredLocations[activeLocation])}
+                    className="info-card-btn secondary"
+                  >
+                    <Edit3 size={16} />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
-        
-        <div className="map-container">
-          <div ref={mapRef} id="map" style={{ width: "100%", height: "100%" }} />
-          <div className="map-controls">
-            <button className="map-control-btn" onClick={() => (window as any).toggleMapType()}>🛰️ Satellite</button>
-            <button className="map-control-btn" onClick={() => (window as any).fitAllMarkers()}>🎯 Show All</button>
-            <button className="map-control-btn" onClick={() => (window as any).toggleTraffic()}>🚗 Traffic</button>
-          </div>
-        </div>
+
+        {/* Mobile overlay */}
+        {sidebarOpen && <div className="mobile-overlay" onClick={() => setSidebarOpen(false)} />}
+
+        {/* Modal Components */}
+        <AddLocationForm
+          isOpen={showAddForm}
+          onClose={() => setShowAddForm(false)}
+          onLocationAdded={handleLocationAdded}
+        />
+
+        <EditLocationModal
+          isOpen={showEditModal}
+          location={editingLocation}
+          onClose={() => {
+            setShowEditModal(false);
+            setEditingLocation(null);
+          }}
+          onLocationUpdated={handleLocationAdded}
+        />
       </div>
-
-      <AddLocationForm
-        isOpen={showAddForm}
-        onClose={() => setShowAddForm(false)}
-        onLocationAdded={handleLocationAdded}
-      />
-
-      <EditLocationModal
-        isOpen={showEditModal}
-        location={editingLocation}
-        onClose={() => {
-          setShowEditModal(false);
-          setEditingLocation(null);
-        }}
-        onLocationUpdated={handleLocationAdded}
-      />
     </>
   );
 }
