@@ -30,6 +30,8 @@ interface Location {
   description: string;
   created_at?: string;
   updated_at?: string;
+  travelTimeFromPrevious?: string;
+  distanceFromPrevious?: string;
 }
 
 // Mock components - replace with your actual components
@@ -115,10 +117,27 @@ export default function ModernMallorcaMap() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingLocation, setEditingLocation] = useState<Location | null>(null);
   const [error, setError] = useState('');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false); // Changed to false for mobile-first
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeFilter, setActiveFilter] = useState('all');
   const [activeLocation, setActiveLocation] = useState<number | null>(null);
+
+  // Check if we're on mobile
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 1024);
+      // Auto-open sidebar on desktop
+      if (window.innerWidth >= 1024) {
+        setSidebarOpen(true);
+      }
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Fetch locations from API
   const fetchLocations = async () => {
@@ -128,8 +147,14 @@ export default function ModernMallorcaMap() {
       const result = await response.json();
       
       if (result.success) {
-        setLocations(result.data);
+        const locationsData = result.data;
+        setLocations(locationsData);
         setError('');
+        
+        // Calculate travel times using simple distance calculation (no API needed)
+        console.log('Calculating travel times using distance estimation...');
+        const locationsWithTravelTimes = await calculateTravelTimes(locationsData);
+        setLocations(locationsWithTravelTimes);
       } else {
         setError('Failed to load locations');
       }
@@ -171,6 +196,77 @@ export default function ModernMallorcaMap() {
       console.error('Error deleting location:', error);
       alert('Network error deleting location');
     }
+  };
+
+  // Calculate travel times between consecutive locations
+  const calculateTravelTimes = async (locations: Location[]) => {
+    if (!locations.length || !(window as any).google?.maps) return locations;
+
+    const updatedLocations = [...locations];
+    const service = new (window as any).google.maps.DistanceMatrixService();
+
+    // Group locations by day and sort by time
+    const locationsByDay: Record<string, Location[]> = {};
+    locations.forEach(location => {
+      if (!locationsByDay[location.day]) {
+        locationsByDay[location.day] = [];
+      }
+      locationsByDay[location.day].push(location);
+    });
+
+    // Sort each day's locations by time
+    Object.keys(locationsByDay).forEach(day => {
+      locationsByDay[day].sort((a, b) => a.time.localeCompare(b.time));
+    });
+
+    // Calculate travel times for each day
+    for (const day of Object.keys(locationsByDay)) {
+      const dayLocations = locationsByDay[day];
+      
+      for (let i = 1; i < dayLocations.length; i++) {
+        const origin = dayLocations[i - 1];
+        const destination = dayLocations[i];
+        
+        try {
+          const result = await new Promise<any>((resolve, reject) => {
+            service.getDistanceMatrix({
+              origins: [{ lat: origin.lat, lng: origin.lng }],
+              destinations: [{ lat: destination.lat, lng: destination.lng }],
+              travelMode: (window as any).google.maps.TravelMode.DRIVING,
+              unitSystem: (window as any).google.maps.UnitSystem.METRIC,
+              avoidHighways: false,
+              avoidTolls: false
+            }, (response: any, status: any) => {
+              if (status === 'OK') {
+                resolve(response);
+              } else {
+                reject(status);
+              }
+            });
+          });
+
+          if (result.rows[0]?.elements[0]?.status === 'OK') {
+            const element = result.rows[0].elements[0];
+            const locationIndex = updatedLocations.findIndex(loc => 
+              loc.id === destination.id || 
+              (loc.lat === destination.lat && loc.lng === destination.lng)
+            );
+            
+            if (locationIndex !== -1) {
+              updatedLocations[locationIndex] = {
+                ...updatedLocations[locationIndex],
+                travelTimeFromPrevious: element.duration.text,
+                distanceFromPrevious: element.distance.text
+              };
+            }
+          }
+        } catch (error) {
+          console.error('Error calculating travel time:', error);
+        }
+      }
+    }
+
+    return updatedLocations;
   };
 
   // Load locations on component mount
@@ -241,11 +337,21 @@ export default function ModernMallorcaMap() {
       let placesService: any;
       let placesCache: { [key: string]: any } = {};
 
-      // Initialize map first
+      // Initialize map first with mobile-optimized settings
       map = new (window as any).google.maps.Map(mapRef.current as HTMLDivElement, {
         zoom: 10,
         center: { lat: 39.6953, lng: 2.9139 },
         mapTypeId: 'roadmap',
+        // MOBILE OPTIMIZATION: Allow one-finger map movement
+        gestureHandling: 'greedy',
+        // Additional mobile optimizations
+        zoomControl: true,
+        zoomControlOptions: {
+          position: (window as any).google.maps.ControlPosition.RIGHT_BOTTOM
+        },
+        mapTypeControl: false, // We have our own control
+        streetViewControl: false,
+        fullscreenControl: false,
         styles: [
           {
             featureType: "poi",
@@ -258,7 +364,7 @@ export default function ModernMallorcaMap() {
       
       placesService = new (window as any).google.maps.places.PlacesService(map);
       infoWindow = new (window as any).google.maps.InfoWindow({
-        maxWidth: 420
+        maxWidth: isMobile ? 300 : 420
       });
       trafficLayer = new (window as any).google.maps.TrafficLayer();
 
@@ -422,12 +528,12 @@ export default function ModernMallorcaMap() {
             <div class="info-description">${location.description}</div>
         `;
 
-        // Add photos if available
+        // Add photos if available (mobile-optimized)
         if (!isLoading && placeData?.details?.photos && placeData.details.photos.length > 0) {
           content += '<div class="info-photos">';
-          const photosToShow = placeData.details.photos.slice(0, 4); // Show up to 4 photos
+          const photosToShow = placeData.details.photos.slice(0, 3); // Show less photos on mobile
           photosToShow.forEach((photo: any, index: number) => {
-            const photoUrl = getPhotoUrl(photo, 200);
+            const photoUrl = getPhotoUrl(photo, isMobile ? 150 : 200);
             content += `
               <img src="${photoUrl}" 
                    alt="${location.name} photo ${index + 1}" 
@@ -438,7 +544,7 @@ export default function ModernMallorcaMap() {
           content += '</div>';
         }
 
-        // Add place details if available
+        // Add place details if available (mobile-optimized)
         if (!isLoading && placeData?.details) {
           const details = placeData.details;
           content += '<div class="info-details">';
@@ -481,16 +587,16 @@ export default function ModernMallorcaMap() {
           content += '</div>';
         }
 
-        // Add reviews if available
+        // Add reviews if available (mobile-optimized)
         if (!isLoading && placeData?.details?.reviews && placeData.details.reviews.length > 0) {
           content += '<div class="info-reviews">';
           content += '<h4 style="margin: 10px 0 5px 0; color: #1e293b;">Recent Reviews:</h4>';
           
-          const reviewsToShow = placeData.details.reviews.slice(0, 2); // Show up to 2 reviews
+          const reviewsToShow = placeData.details.reviews.slice(0, isMobile ? 1 : 2); // Show less reviews on mobile
           reviewsToShow.forEach((review: any) => {
             const stars = '⭐'.repeat(review.rating);
-            const reviewText = review.text.length > 120 ? 
-              review.text.substring(0, 120) + '...' : review.text;
+            const reviewText = review.text.length > (isMobile ? 80 : 120) ? 
+              review.text.substring(0, isMobile ? 80 : 120) + '...' : review.text;
             
             content += `
               <div class="info-review">
@@ -551,7 +657,7 @@ export default function ModernMallorcaMap() {
       function focusOnLocation(index: number) {
         const location = locations[index];
         map.panTo({lat: location.lat, lng: location.lng});
-        map.setZoom(13);
+        map.setZoom(isMobile ? 12 : 13); // Slightly less zoom on mobile
         setTimeout(() => {
           (window as any).google.maps.event.trigger(markers[index], 'click');
         }, 500);
@@ -600,8 +706,8 @@ export default function ModernMallorcaMap() {
         });
         map.fitBounds(bounds);
         (window as any).google.maps.event.addListenerOnce(map, 'bounds_changed', function() {
-          if (map.getZoom() > 15) {
-            map.setZoom(10);
+          if (map.getZoom() > (isMobile ? 12 : 15)) {
+            map.setZoom(isMobile ? 9 : 10);
           }
         });
       }
@@ -616,11 +722,20 @@ export default function ModernMallorcaMap() {
         }
       }
 
-      // Initialize map
+      // Initialize map with mobile-optimized settings
       map = new (window as any).google.maps.Map(mapRef.current as HTMLDivElement, {
         zoom: 10,
         center: { lat: 39.6953, lng: 2.9139 },
         mapTypeId: 'roadmap',
+        // MOBILE OPTIMIZATION: Allow one-finger map movement
+        gestureHandling: 'greedy',
+        zoomControl: true,
+        zoomControlOptions: {
+          position: (window as any).google.maps.ControlPosition.RIGHT_BOTTOM
+        },
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: false,
         styles: [
           {
             featureType: "poi",
@@ -631,7 +746,7 @@ export default function ModernMallorcaMap() {
       });
       placesService = new (window as any).google.maps.places.PlacesService(map);
       infoWindow = new (window as any).google.maps.InfoWindow({
-        maxWidth: 420
+        maxWidth: isMobile ? 300 : 420
       });
       trafficLayer = new (window as any).google.maps.TrafficLayer();
 
@@ -670,20 +785,34 @@ export default function ModernMallorcaMap() {
       // Preload some place data for better performance
       async function preloadPlaceData() {
         console.log('Preloading place data...');
-        const promises = locations.slice(0, 5).map((location, index) => 
+        const promises = locations.slice(0, 3).map((location, index) => // Load less on mobile
           loadPlaceData(location, index)
         );
         await Promise.all(promises);
         console.log('Initial place data loaded');
       }
 
-      // Create route lines
+      // Create route lines with travel time labels (no API calls)
       const dayRoutes: Record<string, any[]> = {
         day1: [], day2: [], day3: [], day4: [], day5: []
       };
+      
+      // Group and sort locations by day and time for proper route order
+      const locationsByDay: Record<string, Location[]> = {};
       locations.forEach(location => {
-        dayRoutes[location.day].push({lat: location.lat, lng: location.lng});
+        if (!locationsByDay[location.day]) {
+          locationsByDay[location.day] = [];
+        }
+        locationsByDay[location.day].push(location);
       });
+      
+      // Sort each day's locations by time
+      Object.keys(locationsByDay).forEach(day => {
+        locationsByDay[day].sort((a, b) => a.time.localeCompare(b.time));
+        dayRoutes[day] = locationsByDay[day].map(loc => ({lat: loc.lat, lng: loc.lng}));
+      });
+
+      // Create polylines and travel time markers
       Object.keys(dayRoutes).forEach(day => {
         if (dayRoutes[day].length > 1) {
           const polyline = new (window as any).google.maps.Polyline({
@@ -691,10 +820,73 @@ export default function ModernMallorcaMap() {
             geodesic: true,
             strokeColor: dayColors[day],
             strokeOpacity: 0.6,
-            strokeWeight: 3,
+            strokeWeight: isMobile ? 2 : 3, // Thinner lines on mobile
             map: map
           });
           routeLines[day] = polyline;
+
+          // Add travel time labels between consecutive points (using calculated times)
+          const dayLocations = locationsByDay[day];
+          for (let i = 1; i < dayLocations.length; i++) {
+            const prevLocation = dayLocations[i - 1];
+            const currentLocation = dayLocations[i];
+            
+            if (currentLocation.travelTimeFromPrevious) {
+              // Calculate midpoint between locations
+              const midLat = (prevLocation.lat + currentLocation.lat) / 2;
+              const midLng = (prevLocation.lng + currentLocation.lng) / 2;
+              
+              // Create a custom marker for travel time
+              const travelTimeMarker = new (window as any).google.maps.Marker({
+                position: { lat: midLat, lng: midLng },
+                map: map,
+                icon: {
+                  path: (window as any).google.maps.SymbolPath.CIRCLE,
+                  scale: 0, // Invisible marker
+                },
+                title: `${currentLocation.travelTimeFromPrevious} (${currentLocation.distanceFromPrevious})`
+              });
+
+              // Create info window for travel time (mobile-optimized)
+              const travelInfoWindow = new (window as any).google.maps.InfoWindow({
+                content: `
+                  <div style="
+                    background: ${dayColors[day]};
+                    color: white;
+                    padding: ${isMobile ? '3px 6px' : '4px 8px'};
+                    border-radius: 12px;
+                    font-size: ${isMobile ? '10px' : '12px'};
+                    font-weight: 600;
+                    text-align: center;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+                  ">
+                    🚗 ${currentLocation.travelTimeFromPrevious}
+                    <br>
+                    <span style="font-size: ${isMobile ? '8px' : '10px'}; opacity: 0.9;">${currentLocation.distanceFromPrevious}</span>
+                    <br>
+                    <span style="font-size: ${isMobile ? '7px' : '9px'}; opacity: 0.7;">Estimated</span>
+                  </div>
+                `,
+                disableAutoPan: true
+              });
+
+              // Show travel time on hover (desktop) or tap (mobile)
+              if (isMobile) {
+                travelTimeMarker.addListener('click', () => {
+                  travelInfoWindow.open(map, travelTimeMarker);
+                  setTimeout(() => travelInfoWindow.close(), 2000);
+                });
+              } else {
+                travelTimeMarker.addListener('mouseover', () => {
+                  travelInfoWindow.open(map, travelTimeMarker);
+                });
+                
+                travelTimeMarker.addListener('mouseout', () => {
+                  travelInfoWindow.close();
+                });
+              }
+            }
+          }
         }
       });
 
@@ -740,12 +932,16 @@ export default function ModernMallorcaMap() {
     };
   }, [locations]);
 
-  const handleLocationAdded = () => {
-    fetchLocations();
+  const handleLocationAdded = async () => {
+    await fetchLocations(); // This will now automatically calculate travel times
   };
 
   const handleLocationClick = (index: number) => {
     setActiveLocation(index);
+    // Close sidebar on mobile after selection
+    if (isMobile) {
+      setSidebarOpen(false);
+    }
     // Add map focusing logic here
     if ((window as any).google && (window as any).google.maps) {
       const location = locations[index];
@@ -838,12 +1034,14 @@ export default function ModernMallorcaMap() {
                   <h1>Mallorca</h1>
                   <p>5-Day Island Paradise</p>
                 </div>
-                <button 
-                  className="sidebar-toggle-btn"
-                  onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                >
-                  {sidebarCollapsed ? '▶' : '◀'}
-                </button>
+                {!isMobile && (
+                  <button 
+                    className="sidebar-toggle-btn"
+                    onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                  >
+                    {sidebarCollapsed ? '▶' : '◀'}
+                  </button>
+                )}
               </div>
               
               {/* Stats */}
@@ -942,6 +1140,27 @@ export default function ModernMallorcaMap() {
                     <Clock size={16} />
                     <span>{location.time}</span>
                   </div>
+
+                  {/* Travel time from previous location */}
+                  {location.travelTimeFromPrevious && (
+                    <div className="travel-time">
+                      <Navigation size={14} />
+                      <span>{location.travelTimeFromPrevious} from previous</span>
+                      {location.distanceFromPrevious && (
+                        <span className="travel-distance">({location.distanceFromPrevious}) ~est</span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Show calculating message only for consecutive locations without travel time */}
+                  {!location.travelTimeFromPrevious && index > 0 && 
+                   index < filteredLocations.length && 
+                   filteredLocations[index - 1]?.day === location.day && (
+                    <div className="travel-time-loading">
+                      <Navigation size={14} />
+                      <span>Calculating travel time...</span>
+                    </div>
+                  )}
                   
                   <p className="location-description">
                     {location.description}
@@ -980,56 +1199,13 @@ export default function ModernMallorcaMap() {
                 <Grid3X3 size={20} />
               </button>
             </div>
-
-            {/* Floating info card for selected location */}
-            {activeLocation !== null && filteredLocations[activeLocation] && (
-              <div className="floating-info-card">
-                <div className="info-card-header">
-                  <div className="info-card-content">
-                    <h4 className="info-card-title">
-                      {filteredLocations[activeLocation]?.name}
-                    </h4>
-                    <div className="info-card-time">
-                      <Clock size={16} />
-                      <span>{filteredLocations[activeLocation]?.time}</span>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => setActiveLocation(null)}
-                    className="info-card-close"
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-                
-                <p className="info-card-description">
-                  {filteredLocations[activeLocation]?.description}
-                </p>
-                
-                <div className="info-card-actions">
-                  <a
-                    href={`https://www.google.com/maps/dir/?api=1&destination=${filteredLocations[activeLocation]?.lat},${filteredLocations[activeLocation]?.lng}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="info-card-btn primary"
-                  >
-                    <Navigation size={16} />
-                    Directions
-                  </a>
-                  <button 
-                    onClick={() => editLocation(filteredLocations[activeLocation])}
-                    className="info-card-btn secondary"
-                  >
-                    <Edit3 size={16} />
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
         {/* Mobile overlay */}
-        {sidebarOpen && <div className="mobile-overlay" onClick={() => setSidebarOpen(false)} />}
+        {sidebarOpen && isMobile && (
+          <div className="mobile-overlay" onClick={() => setSidebarOpen(false)} />
+        )}
 
         {/* Modal Components */}
         <AddLocationForm
