@@ -4,6 +4,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Satellite, Car, Grid3X3, X, Menu, Loader2, Navigation } from 'lucide-react';
 import Sidebar from './components/Sidebar';
+import AddLocationForm from './components/AddLocationForm';
+import EditLocationModal from './components/EditLocationModal';
 import {
   calculateTravelTimes,
   createMarkerIcon,
@@ -28,80 +30,8 @@ const dayNames: Record<string, string> = {
   day5: 'West Coast Finale'
 };
 
-const AddLocationForm = ({ isOpen, onClose, onLocationAdded }: any) => {
-  if (!isOpen) return null;
-  return (
-    <div className="modal-overlay">
-      <div className="modal-content">
-        <div className="modal-header">
-          <h2>Add New Location</h2>
-          <button onClick={onClose} className="modal-close-btn">
-            <X size={20} />
-          </button>
-        </div>
-        <div className="modal-body">
-          <input 
-            type="text" 
-            placeholder="Location name"
-            className="modal-input"
-          />
-          <textarea 
-            placeholder="Description"
-            className="modal-textarea"
-          />
-          <div className="modal-actions">
-            <button onClick={onClose} className="modal-btn-secondary">
-              Cancel
-            </button>
-            <button onClick={() => { onLocationAdded(); onClose(); }} className="modal-btn-primary">
-              Add Location
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const EditLocationModal = ({ isOpen, location, onClose, onLocationUpdated }: any) => {
-  if (!isOpen) return null;
-  return (
-    <div className="modal-overlay">
-      <div className="modal-content">
-        <div className="modal-header">
-          <h2>Edit Location</h2>
-          <button onClick={onClose} className="modal-close-btn">
-            <X size={20} />
-          </button>
-        </div>
-        <div className="modal-body">
-          <input 
-            type="text" 
-            defaultValue={location?.name}
-            placeholder="Location name"
-            className="modal-input"
-          />
-          <textarea 
-            defaultValue={location?.description}
-            placeholder="Description"
-            className="modal-textarea"
-          />
-          <div className="modal-actions">
-            <button onClick={onClose} className="modal-btn-secondary">
-              Cancel
-            </button>
-            <button onClick={() => { onLocationUpdated(); onClose(); }} className="modal-btn-primary">
-              Update Location
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 export default function ModernMallorcaMap() {
-  const mapRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<HTMLDivElement | null>(null);
   const [locations, setLocations] = useState<Location[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -173,7 +103,6 @@ export default function ModernMallorcaMap() {
     fetchLocations();
   }, []);
 
-  // initialize or re-initialize map whenever locations or mobile layout changes
   useEffect(() => {
     initializeGoogleMap(mapRef, locations, isMobile, dayColors, setError);
   }, [locations, isMobile]);

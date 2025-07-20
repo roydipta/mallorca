@@ -30,7 +30,7 @@ export function loadGoogleMapsScript(apiKey: string, cb: () => void) {
  * Initializes the Google Map with markers, routes, and controls.
  */
 export function initializeGoogleMap(
-  mapRef: RefObject<HTMLDivElement>,
+  mapRef: RefObject<HTMLDivElement | null>,
   locations: Location[],
   isMobile: boolean,
   dayColors: Record<string, string>,

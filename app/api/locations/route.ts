@@ -1,3 +1,5 @@
+//app/api/locations/route.ts
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllLocations, createLocation, initializeDatabase } from '@/lib/db';
 
