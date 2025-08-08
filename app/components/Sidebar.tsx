@@ -41,6 +41,7 @@ interface SidebarProps {
   deleteLocation: (id: number) => void;
   isMobile: boolean;
   setShowAddForm: () => void;
+  isFromCache?: boolean;
 }
 
 export default function Sidebar({
@@ -59,7 +60,8 @@ export default function Sidebar({
   editLocation,
   deleteLocation,
   isMobile,
-  setShowAddForm
+  setShowAddForm,
+  isFromCache = false
 }: SidebarProps) {
   return (
     <div className={`sidebar ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
@@ -91,6 +93,12 @@ export default function Sidebar({
             <div className="stat-number">{filteredLocations.length}</div>
             <div className="stat-label">Showing</div>
           </div>
+          {isFromCache && (
+            <div className="stat-item cache-indicator">
+              <div className="stat-number">📋</div>
+              <div className="stat-label">Cached</div>
+            </div>
+          )}
         </div>
       </div>
 

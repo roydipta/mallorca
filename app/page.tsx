@@ -13,6 +13,7 @@ import {
   Location
 } from './components/mapHelpers';
 import { initializeGoogleMap } from './services/googleMapService';
+import { useLocations } from './hooks/useLocations';
 
 const dayColors: Record<string, string> = {
   day1: '#ff6b6b',
@@ -32,17 +33,26 @@ const dayNames: Record<string, string> = {
 
 export default function ModernMallorcaMap() {
   const mapRef = useRef<HTMLDivElement | null>(null);
-  const [locations, setLocations] = useState<Location[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const {
+    locations,
+    isLoading,
+    error,
+    refetch,
+    createLocation,
+    updateLocation,
+    deleteLocation: deleteLocationFromService,
+    isFromCache
+  } = useLocations({ enableCache: true, cacheTTL: 5 * 60 * 1000 });
+  
   const [showAddForm, setShowAddForm] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingLocation, setEditingLocation] = useState<Location | null>(null);
-  const [error, setError] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeFilter, setActiveFilter] = useState('all');
   const [activeLocation, setActiveLocation] = useState<number | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [locationsWithTravelTimes, setLocationsWithTravelTimes] = useState<Location[]>([]);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -56,26 +66,15 @@ export default function ModernMallorcaMap() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const fetchLocations = async () => {
-    try {
-      setIsLoading(true);
-      const response = await fetch('/api/locations');
-      const result = await response.json();
-      if (result.success) {
-        let data = result.data;
-        setError('');
-        const withTimes = await calculateTravelTimes(data);
-        setLocations(withTimes);
-      } else {
-        setError('Failed to load locations');
+  useEffect(() => {
+    const processLocationsWithTravelTimes = async () => {
+      if (locations.length > 0) {
+        const withTimes = await calculateTravelTimes(locations);
+        setLocationsWithTravelTimes(withTimes);
       }
-    } catch (err) {
-      console.error('Error fetching locations:', err);
-      setError('Network error loading locations');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    };
+    processLocationsWithTravelTimes();
+  }, [locations]);
 
   const editLocation = (location: Location) => {
     setEditingLocation(location);
@@ -85,43 +84,32 @@ export default function ModernMallorcaMap() {
   const deleteLocation = async (id: number) => {
     if (!confirm('Are you sure you want to delete this location?')) return;
     try {
-      const res = await fetch(`/api/locations/${id}`, { method: 'DELETE' });
-      const result = await res.json();
-      if (result.success) {
-        await fetchLocations();
-        initializeGoogleMap(mapRef, locations, isMobile, dayColors, setError);
-      } else {
-        alert('Failed to delete location');
-      }
+      await deleteLocationFromService(id);
     } catch (err) {
       console.error('Error deleting location:', err);
-      alert('Network error deleting location');
+      alert('Failed to delete location');
     }
   };
 
   useEffect(() => {
-    fetchLocations();
-  }, []);
-
-  useEffect(() => {
-    initializeGoogleMap(mapRef, locations, isMobile, dayColors, setError);
-  }, [locations, isMobile]);
+    initializeGoogleMap(mapRef, locationsWithTravelTimes, isMobile, dayColors, () => {});
+  }, [locationsWithTravelTimes, isMobile]);
 
   useEffect(() => {
     (window as any).deleteLocationFromMap = deleteLocation;
     (window as any).deleteLocationFromList = deleteLocation;
     (window as any).editLocationFromMap = (id: number) => {
-      const loc = locations.find(l => l.id === id);
+      const loc = locationsWithTravelTimes.find(l => l.id === id);
       if (loc) editLocation(loc);
     };
     (window as any).editLocationFromList = (id: number) => {
-      const loc = locations.find(l => l.id === id);
+      const loc = locationsWithTravelTimes.find(l => l.id === id);
       if (loc) editLocation(loc);
     };
-  }, [locations]);
+  }, [locationsWithTravelTimes, deleteLocation]);
 
   const handleLocationAdded = async () => {
-    await fetchLocations();
+    await refetch();
   };
 
   const handleLocationClick = (index: number) => {
@@ -136,8 +124,8 @@ export default function ModernMallorcaMap() {
   };
 
   const filteredLocations = activeFilter === 'all'
-    ? locations
-    : locations.filter(loc => loc.day === activeFilter);
+    ? locationsWithTravelTimes
+    : locationsWithTravelTimes.filter(loc => loc.day === activeFilter);
 
   const dayFilters = [
     { key: 'all', label: 'All Days', color: 'all' },
@@ -174,7 +162,7 @@ export default function ModernMallorcaMap() {
           <div className="error-text">
             <h3>Error Loading Map</h3>
             <p>{error}</p>
-            <button onClick={fetchLocations} className="retry-btn">
+            <button onClick={refetch} className="retry-btn">
               Retry
             </button>
           </div>
@@ -205,7 +193,7 @@ export default function ModernMallorcaMap() {
             setSidebarOpen={setSidebarOpen}
             sidebarCollapsed={sidebarCollapsed}
             setSidebarCollapsed={setSidebarCollapsed}
-            locations={locations}
+            locations={locationsWithTravelTimes}
             filteredLocations={filteredLocations}
             dayNames={dayNames}
             dayFilters={dayFilters}
@@ -222,6 +210,7 @@ export default function ModernMallorcaMap() {
             deleteLocation={deleteLocation}
             isMobile={isMobile}
             setShowAddForm={() => setShowAddForm(true)}
+            isFromCache={isFromCache}
           />
 
           <div className="map-container">
